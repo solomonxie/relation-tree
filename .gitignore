@@ -1,2 +1,5 @@
+
 blobs/*
+!blobs/README.md
+
 .DS_Store
