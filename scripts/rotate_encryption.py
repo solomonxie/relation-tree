@@ -93,11 +93,9 @@ def rotate_keys():
         new_lines = []
         key_replaced = False
         for line in lines:
-            if line.startswith("ENCRYPTION_KEY="):
-                old_val = line.split("=")[1].strip()
-                new_lines.append(
-                    f"# OLD_ENCRYPTION_KEY={old_val} (rotated on {timestamp})\n"
-                )
+            if line.strip().startswith("ENCRYPTION_KEY="):
+                # Comment out the exact original line
+                new_lines.append(f"# {line.strip()} (rotated on {timestamp})\n")
                 new_lines.append(f"ENCRYPTION_KEY={new_key}\n")
                 key_replaced = True
             else:
