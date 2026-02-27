@@ -23,7 +23,7 @@ cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 # Constants
 DB_PATH = "data/db/database.sqlite"
 SOURCE_DIR = "blobs/user_content_rldt"
-MEDIA_DIR = "data/media"
+MEDIA_DIR = "data/media/persons"
 CSV_PATH = os.path.join(SOURCE_DIR, "img-list.csv")
 
 
