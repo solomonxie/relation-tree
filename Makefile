@@ -7,7 +7,7 @@ init:
 	python3 -m venv venv
 	$(PIP) install -r requirements.txt
 	mkdir -p data/db data/media/persons
-	sqlite3 data/db/database.sqlite < data/schema/schema.sql
+	sqlite3 data/db/database.sqlite < data/schema/persons/schema.sql
 
 parse:
 	$(PYTHON) scripts/parse_old_rldt.py

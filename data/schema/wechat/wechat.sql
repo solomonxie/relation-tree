@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT,
     local_id INTEGER,
     source TEXT,
+    message_type TEXT, -- 'audio', 'video', 'image', 'document', 'text'
+    media_path TEXT,
+    media_id TEXT,
     PRIMARY KEY (username, local_id, source)
 );
 
