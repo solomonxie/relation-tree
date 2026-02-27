@@ -459,6 +459,20 @@ def parse_compressed_source(archive_path, out_conn):
         shutil.rmtree(temp_dir)
 
 
+def append_to_processed_log(counts):
+    log_path = "blobs/processed_log.md"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n### ### WeChat Raw Ingestion (Updated {timestamp})\n")
+        f.write("- **Description**: Aggregates WeChat messages, contacts, and moments from multiple disparate sources (iOS, PC, Text).\n")
+        f.write("- **Source Files**: `blobs/Wechat/`, `blobs/Wechat2/`, `blobs/Wechat3/`, `blobs/old_wechat.sqlite`\n")
+        f.write(f"- **Destination**: `{OUTPUT_DB}` (Tables: `messages`, `contacts`, `moments`, `media`)\n")
+        f.write(f"- **Status**: {counts['messages']} messages and {counts['contacts']} contacts ingested.\n")
+        f.write("- **Processor**: `scripts/parse_wechat.py` -> `main()`\n")
+        f.write("- **Example File**: `blobs/Wechat2/4c29b1307decf4b1224800b65ab52a877104e9d3/Manifest.db`\n")
+        f.write("- **Example Message**: `what happened?[Shocked]`\n")
+
+
 def main():
     os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
     out_conn = sqlite3.connect(OUTPUT_DB)
@@ -503,6 +517,7 @@ def main():
         "media": out_conn.execute("SELECT COUNT(*) FROM media").fetchone()[0],
     }
     logging.info(f"Finished. Total status: {counts}")
+    append_to_processed_log(counts)
     out_conn.close()
 
 

@@ -7,6 +7,7 @@ import csv
 from pathlib import Path
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +26,20 @@ DB_PATH = "data/db/database.sqlite"
 SOURCE_DIR = "blobs/user_content_rldt"
 MEDIA_DIR = "data/media/persons"
 CSV_PATH = os.path.join(SOURCE_DIR, "img-list.csv")
+
+
+def append_to_processed_log(zip_count):
+    log_path = "blobs/processed_log.md"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n### ### RLDT User Content (Updated {timestamp})\n")
+        f.write("- **Description**: Extracts personal media and metadata from legacy RLDT application archives.\n")
+        f.write("- **Source Files**: `blobs/user_content_rldt/*.zip`\n")
+        f.write(f"- **Destination**: `{DB_PATH}` (Tables: `persons`, `media`) & `{MEDIA_DIR}`\n")
+        f.write(f"- **Status**: {zip_count} persons and associated media processed.\n")
+        f.write("- **Processor**: `scripts/parse_old_rldt.py` -> `process_zips()`\n")
+        f.write("- **Example File**: `blobs/user_content_rldt/185.zip`\n")
+        f.write("- **Example Data**: `Person: someone, Folder Hash: 0195154c02a50700`\n")
 
 
 def init_db():
@@ -170,6 +185,7 @@ def process_zips():
 
     conn.close()
     print("Processing complete.")
+    append_to_processed_log(len(zip_files))
 
 
 if __name__ == "__main__":

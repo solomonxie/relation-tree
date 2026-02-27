@@ -2,9 +2,23 @@ import sqlite3
 import json
 import os
 import argparse
+from datetime import datetime
 
 DB_PATH = "data/db/database.sqlite"
 BLOBS_DIR = "blobs"
+
+def append_to_processed_log(count):
+    log_path = "blobs/processed_log.md"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"\n### ### Legacy People & Contacts (Updated {timestamp})\n")
+        f.write("- **Description**: Ingests contact information from legacy mobile databases and export formats.\n")
+        f.write("- **Source Files**: `blobs/old_contacts.sqlite`, `blobs/old_sms.sqlite`, `blobs/old_wechat.sqlite`, `blobs/*.vcf`\n")
+        f.write(f"- **Destination**: `{DB_PATH}` (Tables: `persons`, `contacts`)\n")
+        f.write(f"- **Status**: {count} persons inserted.\n")
+        f.write("- **Processor**: `scripts/extract_people_from_sqlite.py` -> `main()`\n")
+        f.write("- **Example File**: `blobs/all-contacts-20260226.vcf`\n")
+        f.write("- **Example Entity**: `Name: someone, Notes: This contact is read-only...`\n")
 
 def get_db_connection(path):
     if not os.path.exists(path):
@@ -268,6 +282,7 @@ def main():
         dest_conn.commit()
         dest_conn.close()
         print(f"Import completed. {count} records processed.")
+        append_to_processed_log(count)
 
 if __name__ == "__main__":
     main()
