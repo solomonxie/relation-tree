@@ -1,6 +1,5 @@
 import sqlite3
 import csv
-import os
 
 DB_PATH = "data/db/database.sqlite"
 OUTPUT_CSV = "/tmp/persons_for_merging.csv"

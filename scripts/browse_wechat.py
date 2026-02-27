@@ -51,15 +51,15 @@ def show_contact_info(username, nickname):
     cursor.execute("SELECT * FROM contacts WHERE username = ?", (username,))
     row = cursor.fetchone()
     conn.close()
-    
-    console.print(f"
-[bold cyan]--- Contact Info: {nickname} ---[/bold cyan]")
+
+    console.print(f"\n[bold cyan]--- Contact Info: {nickname} ---[/bold cyan]")
     if row:
         # Assuming schema: username, nickname, type, etc.
         # Let's just print available data
         console.print(f"Username: {row[0]}")
         console.print(f"Nickname: {row[1]}")
-        if len(row) > 2: console.print(f"Type: {row[2]}")
+        if len(row) > 2:
+            console.print(f"Type: {row[2]}")
     else:
         console.print("No detailed record found in contacts table.")
 
@@ -112,8 +112,7 @@ def list_and_open_media(username, mtype):
 
 def browse_menu(username, nickname):
     while True:
-        console.print(f"
-[bold green]Menu for {nickname}:[/bold green]")
+        console.print(f"\n[bold green]Menu for {nickname}:[/bold green]")
         console.print("1. Lookup Basic Info")
         console.print("2. Browse Images")
         console.print("3. Browse Voices")
@@ -140,9 +139,8 @@ def main():
 
     while True:
         contacts = list_contacts()
-        choice = IntPrompt.ask("
-Select a contact ID to browse (0 to exit)", default=0)
-        
+        choice = IntPrompt.ask("\nSelect a contact ID to browse (0 to exit)", default=0)
+
         if choice == 0:
             break
         if 0 < choice <= len(contacts):

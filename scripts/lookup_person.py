@@ -1,7 +1,5 @@
-import os
 import sys
 import sqlite3
-from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables

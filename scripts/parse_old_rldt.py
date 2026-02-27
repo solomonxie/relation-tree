@@ -131,11 +131,12 @@ def process_zips():
                     file_hash_16 = get_file_hash(file_data)
                     encrypted_data = encrypt_data(file_data)
 
-                                    # Determine file type (extension)
-                                    ext = os.path.splitext(filename)[1].lower()
-                                    if ext == ".json":
-                                        continue
-                                    file_type = ext if ext else "unknown"
+                    # Determine file type (extension)
+                    ext = os.path.splitext(filename)[1].lower()
+                    if ext == ".json":
+                        continue
+                    file_type = ext if ext else "unknown"
+
                     cursor.execute(
                         """
                         INSERT INTO media (person_id, file_path, file_type, original_filename, file_hash, encryption_status)

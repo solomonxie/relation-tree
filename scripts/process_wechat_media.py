@@ -3,9 +3,14 @@ import sqlite3
 import logging
 import hashlib
 import subprocess
-import re
-import json
 import base64
+import shutil
+from pathlib import Path
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(
@@ -13,12 +18,92 @@ logging.basicConfig(
 )
 
 # Paths
-DB_PATH = "data/db/wechat.sqlite"
-MEDIA_DIR = "data/media/wechat_media"
+WECHAT_DB_PATH = "data/db/wechat.sqlite"
+PERSONS_DB_PATH = "data/db/database.sqlite"
+WECHAT_MEDIA_DIR = "data/media/wechat_media"
+PERSONS_MEDIA_ROOT = "data/media/persons"
+
 MODEL_PATH = os.path.expanduser("~/llm_models/modelscope/models/iic/SenseVoiceSmall")
 PYTHON_WITH_FUNASR = "../sermon-voices/venv/bin/python"
 OLLAMA_API = "http://localhost:11434/api/generate"
 VISION_MODEL = "llava:7b"
+
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+CIPHER = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
+
+
+def get_wechat_person_mapping():
+    """Returns a dict mapping wechat username/hash to person_id."""
+    if not os.path.exists(PERSONS_DB_PATH):
+        return {}
+    conn = sqlite3.connect(PERSONS_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT person_id, value FROM contacts WHERE type = 'wechat'")
+    mapping = {row[1]: row[0] for row in cursor.fetchall()}
+    conn.close()
+    return mapping
+
+
+def get_person_info(person_id):
+    """Returns (name, folder_hash) for a person."""
+    conn = sqlite3.connect(PERSONS_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name, folder_hash FROM persons WHERE id = ?", (person_id,))
+    row = cursor.fetchone()
+    if row and not row[1]:
+        # Generate folder_hash if missing
+        folder_hash = hashlib.md5(row[0].encode()).hexdigest()[:16]
+        cursor.execute("UPDATE persons SET folder_hash = ? WHERE id = ?", (folder_hash, person_id))
+        conn.commit()
+        row = (row[0], folder_hash)
+    conn.close()
+    return row
+
+
+def copy_to_person_media(person_id, src_path, mtype):
+    """Copies file to person's media folder and records in persons DB."""
+    person_info = get_person_info(person_id)
+    if not person_info:
+        return None
+    name, folder_hash = person_info
+
+    file_ext = Path(src_path).suffix or ".bin"
+    with open(src_path, "rb") as f:
+        file_data = f.read()
+    
+    file_hash = hashlib.md5(file_data).hexdigest()[:16]
+    dest_dir = os.path.join(PERSONS_MEDIA_ROOT, folder_hash, "media")
+    os.makedirs(dest_dir, exist_ok=True)
+    
+    dest_filename = f"{file_hash}{file_ext}"
+    dest_path = os.path.join(dest_dir, dest_filename)
+    
+    # Encrypt if cipher available
+    encryption_status = 0
+    if CIPHER:
+        encrypted_data = CIPHER.encrypt(file_data)
+        with open(dest_path, "wb") as f:
+            f.write(encrypted_data)
+        encryption_status = 1
+    else:
+        shutil.copy2(src_path, dest_path)
+
+    # Record in persons DB
+    conn = sqlite3.connect(PERSONS_DB_PATH)
+    cursor = conn.cursor()
+    
+    rel_path = os.path.relpath(dest_path, PERSONS_MEDIA_ROOT)
+    
+    cursor.execute("SELECT id FROM media WHERE file_hash = ? AND person_id = ?", (file_hash, person_id))
+    if not cursor.fetchone():
+        cursor.execute("""
+            INSERT INTO media (person_id, file_path, file_type, original_filename, file_hash, encryption_status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (person_id, rel_path, file_ext, os.path.basename(src_path), file_hash, encryption_status))
+        conn.commit()
+    conn.close()
+    return rel_path
+
 
 def get_audio_transcription(audio_abs_path):
     if not os.path.exists(audio_abs_path): return None
@@ -81,29 +166,29 @@ def get_video_info(video_abs_path):
     except Exception: return "unknown size"
 
 def process_media():
-    if not os.path.exists(DB_PATH): return
-    conn = sqlite3.connect(DB_PATH)
+    if not os.path.exists(WECHAT_DB_PATH): return
+    conn = sqlite3.connect(WECHAT_DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, type, relative_path, create_time, source FROM media")
+    cursor.execute("SELECT id, username, type, relative_path, source FROM media")
     media_records = cursor.fetchall()
 
+    wechat_person_map = get_wechat_person_mapping()
+
     total_processed = 0
-    for mid, username, mtype, rel_path, ctime, source in media_records:
-        abs_path = os.path.join(MEDIA_DIR, rel_path)
+    for mid, username, mtype, rel_path, source in media_records:
+        abs_path = os.path.join(WECHAT_MEDIA_DIR, rel_path)
         if not os.path.exists(abs_path): continue
 
         cursor.execute("SELECT content, media_id FROM messages WHERE media_path = ?", (rel_path,))
         row = cursor.fetchone()
         existing_content, existing_mid = row if row else (None, None)
         
-        # Determine if we need to process (or re-process to add description)
+        # Determine if we need to process
         needs_processing = False
         if not existing_content: needs_processing = True
         elif mtype == "audio" and ("[语音转文字]" in existing_content or "funasr version" in existing_content):
             needs_processing = True
         elif mtype == "image" and ":" not in existing_content: # No description yet
-            needs_processing = True
-        elif "unknown size" in existing_content:
             needs_processing = True
 
         if not needs_processing: continue
@@ -114,6 +199,12 @@ def process_media():
         if mtype == "audio":
             transcription = get_audio_transcription(abs_path)
             content = f"[Audio Transcription]: {transcription}" if transcription else "[语音消息]"
+            
+            # Copy to persons media if mapped
+            person_id = wechat_person_map.get(username)
+            if person_id:
+                copy_to_person_media(person_id, abs_path, mtype)
+                
         elif mtype == "image":
             info, valid_path = get_image_info(abs_path)
             description = get_image_description(valid_path) if valid_path else ""
@@ -132,10 +223,10 @@ def process_media():
         else:
             cursor.execute(
                 """
-                INSERT INTO messages (username, create_time, content, local_id, source, message_type, media_path, media_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO messages (username, content, local_id, source, message_type, media_path, media_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (username, ctime or 0, content, local_id, source, mtype, rel_path, mid)
+                (username, content, local_id, source, mtype, rel_path, mid)
             )
         total_processed += 1
         if total_processed % 10 == 0: 

@@ -78,7 +78,7 @@ def decrypt_and_open(target_str):
         target_path_str, extension, original_name, p_name = match
         target_path = Path(target_path_str)
 
-        print(f"Match found!")
+        print("Match found!")
         print(f"  Person: {p_name}")
         print(f"  Original Name: {original_name}")
         print(f"  Storage Path: {target_path}")
