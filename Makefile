@@ -25,6 +25,11 @@ lookup-person:
 rotate-keys:
 	@$(PYTHON) scripts/rotate_encryption.py
 
+
+browse-wechat: ## Browse WeChat data interactively
+	@$(PYTHON) scripts/browse_wechat.py
+	@$(PYTHON) src/main.py
+
 # Help target to show usage
 help:
 	@echo "Usage:"
