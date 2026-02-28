@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS relationships (
 CREATE TABLE IF NOT EXISTS contacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     person_id INTEGER NOT NULL,
-    type TEXT, -- e.g., 'phone', 'email', 'address'
+    type TEXT, -- e.g., 'phone', 'email', 'address', 'wechat'
     value TEXT NOT NULL,
     FOREIGN KEY (person_id) REFERENCES persons(id)
 );
@@ -129,4 +129,68 @@ CREATE TABLE IF NOT EXISTS person_positions (
     notes TEXT,
     FOREIGN KEY (person_id) REFERENCES persons(id),
     FOREIGN KEY (position_id) REFERENCES positions(id)
+);
+
+-- WeChat raw ingested data
+CREATE TABLE IF NOT EXISTS wechat_raw_contacts (
+    username TEXT PRIMARY KEY,
+    nickname TEXT,
+    type INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS wechat_raw_messages (
+    username TEXT,
+    create_time INTEGER,
+    content TEXT,
+    local_id INTEGER,
+    source TEXT,
+    message_type TEXT, -- 'audio', 'video', 'image', 'document', 'text'
+    media_path TEXT,
+    media_id TEXT,
+    PRIMARY KEY (username, local_id, source)
+);
+
+CREATE TABLE IF NOT EXISTS wechat_moments (
+    id TEXT PRIMARY KEY,
+    username TEXT,
+    nickname TEXT,
+    create_time INTEGER,
+    content TEXT
+);
+
+CREATE TABLE IF NOT EXISTS wechat_raw_media (
+    id TEXT PRIMARY KEY,
+    username TEXT,
+    type TEXT, -- 'image', 'video', 'audio', 'file'
+    relative_path TEXT,
+    original_path TEXT,
+    file_size INTEGER,
+    source TEXT
+);
+
+
+-- Other chats raw ingested data
+CREATE TABLE IF NOT EXISTS other_raw_chats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_file TEXT,
+    username TEXT,
+    create_time INTEGER,
+    content TEXT,
+    platform TEXT,
+    subfolder TEXT
+);
+
+
+-- Emails
+CREATE TABLE IF NOT EXISTS emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER,
+    message_id TEXT UNIQUE,
+    subject TEXT,
+    sender TEXT,
+    recipient TEXT,
+    date TEXT,
+    body TEXT,
+    blob_path TEXT,
+    FOREIGN KEY (person_id) REFERENCES persons(id)
 );

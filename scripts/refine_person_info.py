@@ -44,27 +44,39 @@ If no changes are needed, return an empty JSON object {{}}.
 Only return the JSON object.
 """
 
+
 def query_llm(person_data):
     payload = {
         "model": MODEL_NAME,
         "messages": [
-            {"role": "system", "content": "You are an expert at data cleansing and entity attribute extraction."},
-            {"role": "user", "content": PROMPT_TEMPLATE.format(person_json=json.dumps(person_data, indent=2, ensure_ascii=False))}
+            {
+                "role": "system",
+                "content": "You are an expert at data cleansing and entity attribute extraction.",
+            },
+            {
+                "role": "user",
+                "content": PROMPT_TEMPLATE.format(
+                    person_json=json.dumps(person_data, indent=2, ensure_ascii=False)
+                ),
+            },
         ],
         "temperature": 0.1,
-        "response_format": {"type": "json_object"}
+        "response_format": {"type": "json_object"},
     }
-    
+
     try:
-        response = requests.post(f"{LLM_API_BASE}/chat/completions", 
-                                 headers={"Authorization": f"Bearer {LLM_API_KEY}"},
-                                 json=payload)
+        response = requests.post(
+            f"{LLM_API_BASE}/chat/completions",
+            headers={"Authorization": f"Bearer {LLM_API_KEY}"},
+            json=payload,
+        )
         response.raise_for_status()
-        content = response.json()['choices'][0]['message']['content']
+        content = response.json()["choices"][0]["message"]["content"]
         return json.loads(content)
     except Exception as e:
         print(f"Error querying LLM for person {person_data.get('id')}: {e}")
         return {}
+
 
 def get_persons(limit=None):
     conn = sqlite3.connect(DB_PATH)
@@ -78,45 +90,63 @@ def get_persons(limit=None):
     conn.close()
     return rows
 
+
 def update_person(person_id, updates):
     if not updates:
         return
-    
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
+
     fields = []
     params = []
     for key, value in updates.items():
-        if key in ["name", "display_name", "nick_name", "title", "gender", "birthdate", "brief", "origins", "ethnicity", "notes"]:
+        if key in [
+            "name",
+            "display_name",
+            "nick_name",
+            "title",
+            "gender",
+            "birthdate",
+            "brief",
+            "origins",
+            "ethnicity",
+            "notes",
+        ]:
             fields.append(f"{key} = ?")
             params.append(value)
-    
+
     if fields:
         params.append(person_id)
         cursor.execute(f"UPDATE persons SET {', '.join(fields)} WHERE id = ?", params)
         conn.commit()
     conn.close()
 
+
 def main():
     parser = argparse.ArgumentParser(description="Refine person information using LLM.")
     parser.add_argument("--limit", type=int, help="Limit number of persons to process.")
-    parser.add_argument("--dry-run", action="store_true", help="Don't update the database.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Don't update the database."
+    )
     args = parser.parse_args()
 
     persons = get_persons(args.limit)
     print(f"Processing {len(persons)} persons...")
 
     for i, person in enumerate(persons):
-        print(f"[{i+1}/{len(persons)}] Refining {person['name']} (ID: {person['id']})...")
+        print(
+            f"[{i + 1}/{len(persons)}] Refining {person['name']} (ID: {person['id']})..."
+        )
         suggestions = query_llm(person)
-        
+
         if suggestions:
             print(f"  Suggestions: {suggestions}")
             if not args.dry_run:
-                update_person(person['id'], suggestions)
+                update_person(person["id"], suggestions)
         else:
             print("  No suggestions.")
+
 
 if __name__ == "__main__":
     main()

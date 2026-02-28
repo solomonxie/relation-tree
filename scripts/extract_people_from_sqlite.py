@@ -2,30 +2,11 @@ import sqlite3
 import json
 import os
 import argparse
+import hashlib
 from datetime import datetime
 
 DB_PATH = "data/db/database.sqlite"
 BLOBS_DIR = "blobs"
-
-
-def append_to_processed_log(count):
-    log_path = "blobs/processed_log.md"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"\n### ### Legacy People & Contacts (Updated {timestamp})\n")
-        f.write(
-            "- **Description**: Ingests contact information from legacy mobile databases and export formats.\n"
-        )
-        f.write(
-            "- **Source Files**: `blobs/old_contacts.sqlite`, `blobs/old_sms.sqlite`, `blobs/old_wechat.sqlite`, `blobs/*.vcf`\n"
-        )
-        f.write(f"- **Destination**: `{DB_PATH}` (Tables: `persons`, `contacts`)\n")
-        f.write(f"- **Status**: {count} persons inserted.\n")
-        f.write("- **Processor**: `scripts/extract_people_from_sqlite.py` -> `main()`\n")
-        f.write("- **Example File**: `blobs/all-contacts-20260226.vcf`\n")
-        f.write(
-            "- **Example Entity**: `Name: someone, Notes: This contact is read-only...`\n"
-        )
 
 
 def get_db_connection(path):
@@ -48,7 +29,6 @@ def insert_person(cursor, person_data):
     if row:
         person_id = row[0]
         # Update existing record if needed
-        # For now, let's update fields if they are empty
         cursor.execute(
             "SELECT display_name, nick_name, birthdate, notes FROM persons WHERE id = ?",
             (person_id,),
@@ -76,10 +56,14 @@ def insert_person(cursor, person_data):
                 f"UPDATE persons SET {', '.join(updates)} WHERE id = ?", params
             )
     else:
+        # Generate folder_hash for new person
+        folder_hash = hashlib.md5(
+            f"{person_data.get('name')}_{datetime.now().timestamp()}".encode()
+        ).hexdigest()[:16]
         cursor.execute(
             """
-            INSERT INTO persons (name, display_name, nick_name, birthdate, notes)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO persons (name, display_name, nick_name, birthdate, notes, folder_hash)
+            VALUES (?, ?, ?, ?, ?, ?)
         """,
             (
                 person_data.get("name"),
@@ -87,6 +71,7 @@ def insert_person(cursor, person_data):
                 person_data.get("nick_name"),
                 person_data.get("birthdate"),
                 person_data.get("notes"),
+                folder_hash,
             ),
         )
         person_id = cursor.lastrowid
@@ -213,8 +198,6 @@ def extract_old_wechat():
 
     cursor = conn.cursor()
     try:
-        # Basic filtering of system accounts: length of username > 5 usually excludes system stuff like 'qqsync'
-        # and checking if nickname exists
         cursor.execute(
             "SELECT username, nickname FROM contacts WHERE nickname != '' AND nickname IS NOT NULL"
         )
@@ -249,7 +232,6 @@ def extract_vcf():
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        # Very basic VCF parser
         vcards = content.split("BEGIN:VCARD")
         for vcard in vcards:
             if "END:VCARD" not in vcard:
@@ -262,9 +244,7 @@ def extract_vcf():
                     person["name"] = line[3:].strip()
                 elif line.startswith("N:"):
                     if not person["name"]:
-                        # Try to construct name from N field if FN is missing
                         parts = line[2:].split(";")
-                        # Last;First;Middle;Prefix;Suffix
                         full_name = " ".join(
                             [p.strip() for p in parts[::-1] if p.strip()]
                         )
@@ -326,7 +306,7 @@ def main():
         all_people = all_people[: args.limit]
 
     if args.dry_run:
-        for p in all_people[:10]:  # Print first 10
+        for p in all_people[:10]:
             print(json.dumps(p, indent=2, ensure_ascii=False))
         if len(all_people) > 10:
             print(f"... and {len(all_people) - 10} more.")
@@ -352,7 +332,6 @@ def main():
         dest_conn.commit()
         dest_conn.close()
         print(f"Import completed. {count} records processed.")
-        append_to_processed_log(count)
 
 
 if __name__ == "__main__":

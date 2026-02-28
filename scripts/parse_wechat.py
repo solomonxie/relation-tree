@@ -14,8 +14,8 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/wechat.sqlite"
-SCHEMA_FILE = "data/schema/wechat/wechat.sql"
+OUTPUT_DB = "data/db/database.sqlite"
+SCHEMA_FILE = "data/schema/persons/schema.sql"  # Use the main schema
 MEDIA_OUTPUT_DIR = "data/media/wechat_media"
 
 
@@ -52,9 +52,10 @@ def verify_insertion(out_conn, table, source, expected_min=1):
     logging.info(
         f"Verification: {table} for {source} has {count} records (found in source: {expected_min})."
     )
-    # Don't assert, just log. Some sources might be empty or have duplicates.
     if count == 0 and expected_min > 0:
-        logging.warning(f"Likely missed data: {table} for {source} is empty but source had {expected_min} records")
+        logging.warning(
+            f"Likely missed data: {table} for {source} is empty but source had {expected_min} records"
+        )
     return count
 
 
@@ -103,7 +104,8 @@ def parse_ios_backup(backup_dir, out_conn):
                 rows = cursor.fetchall()
                 for row in rows:
                     out_cursor.execute(
-                        "INSERT OR IGNORE INTO contacts (username, type) VALUES (?, ?)", row
+                        "INSERT OR IGNORE INTO wechat_raw_contacts (username, type) VALUES (?, ?)",
+                        row,
                     )
                 logging.info(f"Processed {len(rows)} contacts from iOS backup.")
             except Exception as e:
@@ -122,12 +124,12 @@ def parse_ios_backup(backup_dir, out_conn):
                 )
                 for row in cursor.fetchall():
                     out_cursor.execute(
-                        "UPDATE contacts SET nickname = ? WHERE username = ?",
+                        "UPDATE wechat_raw_contacts SET nickname = ? WHERE username = ?",
                         (row[1], row[0]),
                     )
                     if out_cursor.rowcount == 0:
                         out_cursor.execute(
-                            "INSERT OR IGNORE INTO contacts (username, nickname) VALUES (?, ?)",
+                            "INSERT OR IGNORE INTO wechat_raw_contacts (username, nickname) VALUES (?, ?)",
                             (row[0], row[1]),
                         )
 
@@ -137,7 +139,7 @@ def parse_ios_backup(backup_dir, out_conn):
                 rows = cursor.fetchall()
                 for row in rows:
                     out_cursor.execute(
-                        "INSERT OR IGNORE INTO moments (id, username, nickname, create_time, content) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT OR IGNORE INTO wechat_moments (id, username, nickname, create_time, content) VALUES (?, ?, ?, ?, ?)",
                         row,
                     )
                 logging.info(f"Processed {len(rows)} moments from iOS backup.")
@@ -166,7 +168,7 @@ def parse_ios_backup(backup_dir, out_conn):
                     for row in rows:
                         username = user_map.get(row[0], f"unknown_{row[0]}")
                         out_cursor.execute(
-                            "INSERT OR IGNORE INTO messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
+                            "INSERT OR IGNORE INTO wechat_raw_messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
                             (username, row[1], row[2], row[3], source_name),
                         )
                     total_msgs += len(rows)
@@ -174,7 +176,9 @@ def parse_ios_backup(backup_dir, out_conn):
             except Exception as e:
                 logging.error(f"Error parsing FTS messages from {fts_db_path}: {e}")
             conn.close()
-            verify_insertion(out_conn, "messages", source_name, expected_min=total_msgs)
+            verify_insertion(
+                out_conn, "wechat_raw_messages", source_name, expected_min=total_msgs
+            )
 
         # 4. Media
         conn = sqlite3.connect(manifest_db)
@@ -210,7 +214,7 @@ def parse_ios_backup(backup_dir, out_conn):
                     if not os.path.exists(dest_path):
                         shutil.copy2(src_path, dest_path)
                     out_cursor.execute(
-                        "INSERT OR IGNORE INTO media (id, username, type, relative_path, original_path, file_size, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT OR IGNORE INTO wechat_raw_media (id, username, type, relative_path, original_path, file_size, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (
                             fid,
                             user_hash,
@@ -225,7 +229,9 @@ def parse_ios_backup(backup_dir, out_conn):
                 except Exception as e:
                     logging.error(f"Error copying {rel}: {e}")
         conn.close()
-        verify_insertion(out_conn, "media", source_name, expected_min=total_media)
+        verify_insertion(
+            out_conn, "wechat_raw_media", source_name, expected_min=total_media
+        )
 
 
 def parse_direct_sqlite(sqlite_path, out_conn):
@@ -245,36 +251,72 @@ def parse_direct_sqlite(sqlite_path, out_conn):
 
     # Check if it's already in our format
     try:
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='messages'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND (name='messages' OR name='wechat_raw_messages')"
+        )
         if cursor.fetchone():
             logging.info(f"Source {sqlite_path} matches our schema, copying directly.")
             # Copy contacts
-            cursor.execute("SELECT username, nickname, type FROM contacts")
+            try:
+                cursor.execute(
+                    "SELECT username, nickname, type FROM wechat_raw_contacts"
+                )
+            except Exception:
+                cursor.execute("SELECT username, nickname, type FROM contacts")
             for row in cursor.fetchall():
-                out_cursor.execute("INSERT OR IGNORE INTO contacts (username, nickname, type) VALUES (?, ?, ?)", row)
-            
+                out_cursor.execute(
+                    "INSERT OR IGNORE INTO wechat_raw_contacts (username, nickname, type) VALUES (?, ?, ?)",
+                    row,
+                )
+
             # Copy messages
-            cursor.execute("SELECT username, create_time, content, local_id FROM messages")
+            try:
+                cursor.execute(
+                    "SELECT username, create_time, content, local_id FROM wechat_raw_messages"
+                )
+            except Exception:
+                cursor.execute(
+                    "SELECT username, create_time, content, local_id FROM messages"
+                )
             count = 0
             for row in cursor.fetchall():
                 out_cursor.execute(
-                    "INSERT OR IGNORE INTO messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
-                    (*row, source_name)
+                    "INSERT OR IGNORE INTO wechat_raw_messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
+                    (*row, source_name),
                 )
                 count += 1
-            verify_insertion(out_conn, "messages", source_name, expected_min=count)
-            
+            verify_insertion(
+                out_conn, "wechat_raw_messages", source_name, expected_min=count
+            )
+
             # Copy moments
-            cursor.execute("SELECT id, username, nickname, create_time, content FROM moments")
-            for row in cursor.fetchall():
-                out_cursor.execute("INSERT OR IGNORE INTO moments (id, username, nickname, create_time, content) VALUES (?, ?, ?, ?, ?)", row)
-            
-            # Copy media
-            cursor.execute("SELECT id, username, type, relative_path, original_path, file_size FROM media")
+            try:
+                cursor.execute(
+                    "SELECT id, username, nickname, create_time, content FROM wechat_moments"
+                )
+            except Exception:
+                cursor.execute(
+                    "SELECT id, username, nickname, create_time, content FROM moments"
+                )
             for row in cursor.fetchall():
                 out_cursor.execute(
-                    "INSERT OR IGNORE INTO media (id, username, type, relative_path, original_path, file_size, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (*row, source_name)
+                    "INSERT OR IGNORE INTO wechat_moments (id, username, nickname, create_time, content) VALUES (?, ?, ?, ?, ?)",
+                    row,
+                )
+
+            # Copy media
+            try:
+                cursor.execute(
+                    "SELECT id, username, type, relative_path, original_path, file_size FROM wechat_raw_media"
+                )
+            except Exception:
+                cursor.execute(
+                    "SELECT id, username, type, relative_path, original_path, file_size FROM media"
+                )
+            for row in cursor.fetchall():
+                out_cursor.execute(
+                    "INSERT OR IGNORE INTO wechat_raw_media (id, username, type, relative_path, original_path, file_size, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (*row, source_name),
                 )
             conn.close()
             return
@@ -291,33 +333,32 @@ def parse_direct_sqlite(sqlite_path, out_conn):
             table_name = t_row[0]
             cursor.execute(f"PRAGMA table_info({table_name})")
             columns = [c[1] for c in cursor.fetchall()]
-            u_col = next((c for c in columns if c.lower() in ["username", "usrname"]), None)
+            u_col = next(
+                (c for c in columns if c.lower() in ["username", "usrname"]), None
+            )
             n_col = next((c for c in columns if c.lower() in ["nickname"]), None)
             t_col = next((c for c in columns if c.lower() in ["type"]), None)
 
             if u_col:
                 query = f"SELECT {u_col}"
-                cols = [u_col]
-                if t_col: 
+                if t_col:
                     query += f", {t_col}"
-                    cols.append(t_col)
-                if n_col: 
+                if n_col:
                     query += f", {n_col}"
-                    cols.append(n_col)
                 query += f" FROM {table_name}"
-                
+
                 cursor.execute(query)
                 for row in cursor.fetchall():
                     uname = row[0]
                     utype = row[1] if t_col else None
                     unick = row[2] if n_col else None
                     out_cursor.execute(
-                        "INSERT OR IGNORE INTO contacts (username, type, nickname) VALUES (?, ?, ?)",
+                        "INSERT OR IGNORE INTO wechat_raw_contacts (username, type, nickname) VALUES (?, ?, ?)",
                         (uname, utype, unick),
                     )
                     if unick:
                         out_cursor.execute(
-                            "UPDATE contacts SET nickname = ? WHERE username = ?",
+                            "UPDATE wechat_raw_contacts SET nickname = ? WHERE username = ?",
                             (unick, uname),
                         )
     except Exception as e:
@@ -334,25 +375,34 @@ def parse_direct_sqlite(sqlite_path, out_conn):
         try:
             cursor.execute(f"PRAGMA table_info({table})")
             columns = [c[1] for c in cursor.fetchall()]
-            m_col = next((c for c in columns if c.lower() in ["message", "content"]), None)
-            t_col = next((c for c in columns if c.lower() in ["createtime", "create_time"]), None)
-            l_col = next((c for c in columns if c.lower() in ["meslocalid", "localid", "id"]), None)
-            
+            m_col = next(
+                (c for c in columns if c.lower() in ["message", "content"]), None
+            )
+            t_col = next(
+                (c for c in columns if c.lower() in ["createtime", "create_time"]), None
+            )
+            l_col = next(
+                (c for c in columns if c.lower() in ["meslocalid", "localid", "id"]),
+                None,
+            )
+
             if m_col and t_col and l_col:
                 cursor.execute(f"SELECT {t_col}, {m_col}, {l_col} FROM {table}")
                 rows = cursor.fetchall()
                 for row in rows:
                     out_cursor.execute(
-                        "INSERT OR IGNORE INTO messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT OR IGNORE INTO wechat_raw_messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
                         (hash_id, row[0], row[1], row[2], source_name),
                     )
                 total_msgs += len(rows)
         except Exception as e:
             logging.error(f"Error parsing {table} in {sqlite_path}: {e}")
-    
+
     conn.close()
     if total_msgs > 0:
-        verify_insertion(out_conn, "messages", source_name, expected_min=total_msgs)
+        verify_insertion(
+            out_conn, "wechat_raw_messages", source_name, expected_min=total_msgs
+        )
 
 
 def parse_exported_text(export_dir, out_conn):
@@ -372,7 +422,6 @@ def parse_exported_text(export_dir, out_conn):
         file_path = os.path.join(export_dir, filename)
 
         try:
-            # Try different encodings
             encodings = ["utf-8", "gbk", "utf-16"]
             content = None
             for enc in encodings:
@@ -382,22 +431,22 @@ def parse_exported_text(export_dir, out_conn):
                     break
                 except Exception:
                     continue
-            
+
             if not content:
                 logging.error(f"Could not read {filename} with any encoding")
                 continue
 
             lines = content.split("\n")
             for line in lines:
-                # Match pattern: 2024-01-01 12:00 Nickname 发送/接收 Message
                 match = re.match(
                     r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+(.*?)\s+(发送|接收)\s+(.*?)\s+(.*)",
                     line,
                 )
                 if not match:
-                    # Match pattern: 2024-01-01 12:00:00 Nickname: Message
-                    match = re.match(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(.*?):\s+(.*)", line)
-                
+                    match = re.match(
+                        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(.*?):\s+(.*)", line
+                    )
+
                 if match:
                     groups = match.groups()
                     if len(groups) == 5:
@@ -406,71 +455,58 @@ def parse_exported_text(export_dir, out_conn):
                     else:
                         dt_str, contact, msg_content = groups
                         fmt = "%Y-%m-%d %H:%M:%S"
-                    
+
                     try:
                         ts = int(datetime.strptime(dt_str, fmt).timestamp())
                     except Exception:
                         continue
-                        
+
                     local_id = int(hashlib.md5(line.encode()).hexdigest()[:8], 16)
 
                     out_cursor.execute(
-                        "INSERT OR IGNORE INTO messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
+                        "INSERT OR IGNORE INTO wechat_raw_messages (username, create_time, content, local_id, source) VALUES (?, ?, ?, ?, ?)",
                         (username, ts, msg_content.strip(), local_id, source_name),
                     )
                     total_msgs += 1
 
                     out_cursor.execute(
-                        "UPDATE contacts SET nickname = ? WHERE username = ?",
+                        "UPDATE wechat_raw_contacts SET nickname = ? WHERE username = ?",
                         (contact, username),
                     )
                     if out_cursor.rowcount == 0:
                         out_cursor.execute(
-                            "INSERT OR IGNORE INTO contacts (username, nickname) VALUES (?, ?)",
+                            "INSERT OR IGNORE INTO wechat_raw_contacts (username, nickname) VALUES (?, ?)",
                             (username, contact),
                         )
         except Exception as e:
             logging.error(f"Error parsing {filename}: {e}")
 
     if total_msgs > 0:
-        verify_insertion(out_conn, "messages", source_name, expected_min=total_msgs)
+        verify_insertion(
+            out_conn, "wechat_raw_messages", source_name, expected_min=total_msgs
+        )
 
 
 def parse_compressed_source(archive_path, out_conn):
     logging.info(f"Parsing compressed source: {archive_path}")
     temp_dir = tempfile.mkdtemp()
     try:
-        # Use 7z to extract
-        subprocess.run(["7z", "x", f"-o{temp_dir}", archive_path, "-y"], capture_output=True)
-        
-        # Recursively find and parse files in temp_dir
-        for root, dirs, files in os.walk(temp_dir):
+        subprocess.run(
+            ["7z", "x", f"-o{temp_dir}", archive_path, "-y"], capture_output=True
+        )
+
+        for root, _, files in os.walk(temp_dir):
             for f in files:
                 fpath = os.path.join(root, f)
                 if f.endswith(".sqlite") or f.endswith(".db"):
                     parse_direct_sqlite(fpath, out_conn)
                 elif f.endswith(".txt"):
-                    # For txt, we'll treat the directory as an export dir
                     parse_exported_text(root, out_conn)
-                    break # Only parse once per directory if it contains txt files
+                    break
     except Exception as e:
         logging.error(f"Error extracting/parsing {archive_path}: {e}")
     finally:
         shutil.rmtree(temp_dir)
-
-
-def append_to_processed_log(counts):
-    log_path = "blobs/processed_log.md"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"\n### ### WeChat Raw Ingestion (Updated {timestamp})\n")
-        f.write("- **Description**: Aggregates WeChat messages, contacts, and moments from multiple disparate sources (iOS, PC, Text).\n")
-        f.write("- **Source Files**: `blobs/Wechat/`, `blobs/Wechat2/`, `blobs/Wechat3/`, `blobs/old_wechat.sqlite`\n")
-        f.write(f"- **Destination**: `{OUTPUT_DB}` (Tables: `messages`, `contacts`, `moments`, `media`)\n")
-        f.write(f"- **Status**: {counts['messages']} messages and {counts['contacts']} contacts ingested.\n")
-        f.write("- **Processor**: `scripts/parse_wechat.py` -> `main()`\n")
-        f.write("- **Example File**: `blobs/Wechat2/4c29b1307decf4b1224800b65ab52a877104e9d3/Manifest.db`\n")
-        f.write("- **Example Message**: `what happened?[Shocked]`\n")
 
 
 def main():
@@ -511,13 +547,16 @@ def main():
 
     out_conn.commit()
     counts = {
-        "contacts": out_conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0],
-        "messages": out_conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
-        "moments": out_conn.execute("SELECT COUNT(*) FROM moments").fetchone()[0],
-        "media": out_conn.execute("SELECT COUNT(*) FROM media").fetchone()[0],
+        "contacts": out_conn.execute(
+            "SELECT COUNT(*) FROM wechat_raw_contacts"
+        ).fetchone()[0],
+        "messages": out_conn.execute(
+            "SELECT COUNT(*) FROM wechat_raw_messages"
+        ).fetchone()[0],
+        "moments": out_conn.execute("SELECT COUNT(*) FROM wechat_moments").fetchone()[0],
+        "media": out_conn.execute("SELECT COUNT(*) FROM wechat_raw_media").fetchone()[0],
     }
     logging.info(f"Finished. Total status: {counts}")
-    append_to_processed_log(counts)
     out_conn.close()
 
 

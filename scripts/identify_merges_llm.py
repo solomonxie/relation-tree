@@ -167,7 +167,7 @@ def main():
     for i in range(0, len(candidate_groups), batch_size):
         batch = candidate_groups[i : i + batch_size]
         print(
-            f"Processing batch {i//batch_size + 1}/{(len(candidate_groups)-1)//batch_size + 1}..."
+            f"Processing batch {i // batch_size + 1}/{(len(candidate_groups) - 1) // batch_size + 1}..."
         )
         result = query_llm(batch)
         if result and "merges" in result:

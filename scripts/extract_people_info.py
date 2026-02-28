@@ -229,7 +229,12 @@ def insert_into_db(data):
                     INSERT INTO financial_information (person_id, type, country, details)
                     VALUES (?, ?, ?, ?)
                 """,
-                    (person_id, fin.get("type"), fin.get("country"), fin.get("details")),
+                    (
+                        person_id,
+                        fin.get("type"),
+                        fin.get("country"),
+                        fin.get("details"),
+                    ),
                 )
 
             # Insert career
@@ -361,12 +366,12 @@ def main():
     print(f"Processing {len(chunks)} chunks...")
 
     for i, chunk in enumerate(chunks):
-        print(f"Processing chunk {i+1}/{len(chunks)}...")
+        print(f"Processing chunk {i + 1}/{len(chunks)}...")
         extracted_data = query_llm(chunk)
         if extracted_data:
             insert_into_db(extracted_data)
         else:
-            print(f"No data extracted from chunk {i+1}")
+            print(f"No data extracted from chunk {i + 1}")
 
 
 if __name__ == "__main__":

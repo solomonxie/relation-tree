@@ -28,81 +28,48 @@ MEDIA_DIR = "data/media/persons"
 CSV_PATH = os.path.join(SOURCE_DIR, "img-list.csv")
 
 
-def append_to_processed_log(zip_count):
-    log_path = "blobs/processed_log.md"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"\n### ### RLDT User Content (Updated {timestamp})\n")
-        f.write("- **Description**: Extracts personal media and metadata from legacy RLDT application archives.\n")
-        f.write("- **Source Files**: `blobs/user_content_rldt/*.zip`\n")
-        f.write(f"- **Destination**: `{DB_PATH}` (Tables: `persons`, `media`) & `{MEDIA_DIR}`\n")
-        f.write(f"- **Status**: {zip_count} persons and associated media processed.\n")
-        f.write("- **Processor**: `scripts/parse_old_rldt.py` -> `process_zips()`\n")
-        f.write("- **Example File**: `blobs/user_content_rldt/185.zip`\n")
-        f.write("- **Example Data**: `Person: someone, Folder Hash: 0195154c02a50700`\n")
-
-
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     return conn
+
+
+def get_file_hash(data):
+    return hashlib.md5(data).hexdigest()[:16]
 
 
 def encrypt_data(data):
     return cipher_suite.encrypt(data)
 
 
-def get_hash(input_str, length=16):
-    return hashlib.sha256(input_str.encode()).hexdigest()[:length]
-
-
-def get_file_hash(data, length=16):
-    return hashlib.sha256(data).hexdigest()[:length]
-
-
-def load_img_list():
-    img_map = {}  # (PID, ID) -> (Name, PictureName)
-    person_map = {}  # PID -> Name
-    if not os.path.exists(CSV_PATH):
-        print(f"Warning: {CSV_PATH} not found.")
-        return img_map, person_map
-
-    with open(CSV_PATH, mode="r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            pid = row["PID"]
-            img_id = row["ID"]
-            name = row["Name"]
-            pic_name = row["PictureName"]
-            img_map[(pid, img_id)] = (name, pic_name)
-            if pid not in person_map:
-                person_map[pid] = name
-    return img_map, person_map
+def load_person_map():
+    person_map = {}
+    if os.path.exists(CSV_PATH):
+        with open(CSV_PATH, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader)  # Skip header
+            for row in reader:
+                if len(row) >= 2:
+                    person_map[row[0]] = row[1]
+    return person_map
 
 
 def process_zips():
-    img_map, person_map = load_img_list()
+    if not os.path.exists(SOURCE_DIR):
+        print(f"Source directory {SOURCE_DIR} does not exist.")
+        return
+
+    person_map = load_person_map()
+    zip_files = list(Path(SOURCE_DIR).glob("*.zip"))
+    print(f"Found {len(zip_files)} zip files.")
 
     conn = init_db()
     cursor = conn.cursor()
-
-    source_path = Path(SOURCE_DIR)
-    media_root = Path(MEDIA_DIR)
-
-    # Clean up previous media and db if re-running
-    if media_root.exists():
-        import shutil
-
-        shutil.rmtree(media_root)
-    media_root.mkdir(parents=True, exist_ok=True)
-
-    zip_files = list(source_path.glob("*.zip"))
-    print(f"Found {len(zip_files)} zip files.")
 
     for zip_file in zip_files:
         pid = zip_file.stem
         # Use name from CSV if available, otherwise "Person <pid>"
         actual_name = person_map.get(pid, f"Person {pid}")
-        folder_hash = get_hash(f"{pid}_{secrets.token_hex(4)}")
+        folder_hash = hashlib.md5(f"{actual_name}_{pid}".encode()).hexdigest()[:16]
 
         # Insert person
         cursor.execute(
@@ -111,35 +78,22 @@ def process_zips():
         )
         person_id = cursor.lastrowid
 
-        person_media_dir = media_root / folder_hash
-        person_media_dir.mkdir(parents=True, exist_ok=True)
-
         print(
             f"Processing {actual_name} (PID: {pid}, ID: {person_id}, Hash: {folder_hash})..."
         )
 
+        # Process contents of zip
         with zipfile.ZipFile(zip_file, "r") as z:
             for file_info in z.infolist():
                 if file_info.is_dir():
                     continue
 
-                original_path = file_info.filename
-                filename = os.path.basename(original_path)
-                # UUID part usually before extension
-                img_uuid = os.path.splitext(filename)[0]
-
-                if filename.startswith("__MACOSX") or filename.startswith("."):
+                filename = os.path.basename(file_info.filename)
+                if filename.startswith(".") or filename == "Thumbs.db":
                     continue
 
-                # Lookup info from CSV
-                csv_info = img_map.get((pid, img_uuid))
-                if csv_info:
-                    _, display_name = csv_info
-                    # Reconstruct original filename if possible
-                    ext = os.path.splitext(filename)[1]
-                    final_original_name = f"{display_name}{ext}"
-                else:
-                    final_original_name = filename
+                # RLDT often has a naming convention: 185_1.jpg -> original name might be in CSV or just use filename
+                final_original_name = filename
 
                 with z.open(file_info) as f:
                     file_data = f.read()
@@ -165,17 +119,18 @@ def process_zips():
                             file_hash_16,
                         ),
                     )
-
                     media_id = cursor.lastrowid
 
-                    final_filename = f"{media_id}_{file_hash_16}"
-                    target_file = person_media_dir / final_filename
+                    # Save encrypted file
+                    target_dir = Path(MEDIA_DIR) / folder_hash / "media"
+                    target_dir.mkdir(parents=True, exist_ok=True)
 
-                    with open(target_file, "wb") as ef:
-                        ef.write(encrypted_data)
+                    target_path = target_dir / f"{file_hash_16}{file_type}"
+                    with open(target_path, "wb") as out_f:
+                        out_f.write(encrypted_data)
 
-                    # Update with final path
-                    relative_path = str(target_file)
+                    # Update file_path in DB
+                    relative_path = os.path.relpath(target_path, MEDIA_DIR)
                     cursor.execute(
                         "UPDATE media SET file_path = ? WHERE id = ?",
                         (relative_path, media_id),
@@ -185,7 +140,6 @@ def process_zips():
 
     conn.close()
     print("Processing complete.")
-    append_to_processed_log(len(zip_files))
 
 
 if __name__ == "__main__":
