@@ -13,6 +13,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime
+from setup_db import setup_db
 from html.parser import HTMLParser
 
 # Setup logging
@@ -21,7 +22,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
+OUTPUT_DB = "data/db/raw/others_generic.sqlite"
 OTHERS_DIR = "blobs/others"
 
 
@@ -183,6 +184,7 @@ def main():
         logging.info(f"Others directory not found: {OTHERS_DIR}")
         return
 
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
     cursor = conn.cursor()
 

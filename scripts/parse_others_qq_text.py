@@ -14,6 +14,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime
+from setup_db import setup_db
 
 # Setup logging
 logging.basicConfig(
@@ -21,7 +22,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
+OUTPUT_DB = "data/db/raw/others_qq_text.sqlite"
 OTHERS_DIR = "blobs/others"
 
 
@@ -101,6 +102,7 @@ def main():
         logging.info(f"Others directory not found: {OTHERS_DIR}")
         return
 
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
     cursor = conn.cursor()
 

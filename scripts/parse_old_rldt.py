@@ -22,7 +22,7 @@ cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 # Constants
 DB_PATH = "data/db/database.sqlite"
 SOURCE_DIR = "blobs/user_content_rldt"
-MEDIA_DIR = "data/media/persons"
+MEDIA_DIR = "data/media"
 CSV_PATH = os.path.join(SOURCE_DIR, "img-list.csv")
 
 
@@ -111,11 +111,19 @@ def process_zips():
 
                     encrypted_data = encrypt_data(file_data)
 
-                    # Determine file type (extension)
+                    # Determine file type category
                     ext = os.path.splitext(filename)[1].lower()
                     if ext == ".json":
                         continue
-                    file_type = ext if ext else "unknown"
+                    
+                    if ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]:
+                        mtype = "image"
+                    elif ext in [".mp4", ".mov", ".avi", ".mkv"]:
+                        mtype = "video"
+                    elif ext in [".mp3", ".wav", ".amr", ".silk", ".aud"]:
+                        mtype = "audio"
+                    else:
+                        mtype = "documents"
 
                     cursor.execute(
                         """
@@ -126,7 +134,7 @@ def process_zips():
                         (
                             person_id,
                             "PENDING",
-                            file_type,
+                            ext if ext else "unknown",
                             final_original_name,
                             file_hash_16,
                         ),
@@ -134,10 +142,10 @@ def process_zips():
                     media_id = cursor.lastrowid
 
                     # Save encrypted file
-                    target_dir = Path(MEDIA_DIR) / folder_hash / "media"
+                    target_dir = Path(MEDIA_DIR) / folder_hash / mtype
                     target_dir.mkdir(parents=True, exist_ok=True)
 
-                    target_path = target_dir / f"{file_hash_16}{file_type}"
+                    target_path = target_dir / f"{file_hash_16}{ext}"
                     with open(target_path, "wb") as out_f:
                         out_f.write(encrypted_data)
 

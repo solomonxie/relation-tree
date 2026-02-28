@@ -26,6 +26,7 @@ SCRIPTS = [
     "scripts/parse_others_qq_text.py",
     "scripts/parse_others_bak.py",
     "scripts/parse_others_generic.py",
+    "scripts/merge_dbs.py",
     "scripts/fetch_emails.py",
     "scripts/process_wechat_media.py"
 ]

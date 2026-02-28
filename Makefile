@@ -6,7 +6,7 @@ PIP = ./venv/bin/pip
 init:
 	python3 -m venv venv
 	$(PIP) install -r requirements.txt
-	mkdir -p data/db data/media/persons
+	mkdir -p data/db/raw data/media
 	sqlite3 data/db/database.sqlite < data/schema/persons/schema.sql
 
 parse:

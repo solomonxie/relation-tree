@@ -12,14 +12,14 @@ import hashlib
 import logging
 import os
 import sqlite3
-
+from setup_db import setup_db
 # Setup logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
+OUTPUT_DB = "data/db/raw/wechat_internal_db.sqlite"
 OLD_SQLITE = "blobs/old_wechat.sqlite"
 
 
@@ -154,7 +154,7 @@ def main():
         logging.info(f"File not found: {OLD_SQLITE}")
         return
 
-    os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
     parse_internal_sqlite(OLD_SQLITE, conn)
     conn.commit()

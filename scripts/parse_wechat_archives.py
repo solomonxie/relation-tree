@@ -11,7 +11,7 @@ import logging
 import os
 import shutil
 import sqlite3
-import subprocess
+from setup_db import setup_dbimport subprocess
 import tempfile
 
 # Use logic from related WeChat parsers for consistent extraction
@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
+OUTPUT_DB = "data/db/raw/wechat_archives.sqlite"
 ARCHIVES_DIR = "blobs/Wechat3"
 
 
@@ -63,7 +63,7 @@ def main():
         logging.info(f"Archives directory not found: {ARCHIVES_DIR}")
         return
 
-    os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
 
     for f in os.listdir(ARCHIVES_DIR):

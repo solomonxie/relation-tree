@@ -6,8 +6,8 @@ from rich.table import Table
 from rich.prompt import Prompt, IntPrompt
 
 # Configuration
-DB_PATH = "data/db/wechat.sqlite"
-MEDIA_DIR = "data/media/wechat_media"
+DB_PATH = "data/db/database.sqlite"
+MEDIA_DIR = "data/media"
 
 console = Console()
 
@@ -22,8 +22,8 @@ def list_contacts():
     # Join with some message counts to find active contacts
     query = """
         SELECT c.username, c.nickname, COUNT(m.username) as msg_count
-        FROM contacts c
-        LEFT JOIN messages m ON c.username = m.username
+        FROM wechat_raw_contacts c
+        LEFT JOIN wechat_raw_messages m ON c.username = m.username
         GROUP BY c.username
         HAVING msg_count > 0
         ORDER BY msg_count DESC
@@ -51,14 +51,13 @@ def list_contacts():
 def show_contact_info(username, nickname):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM contacts WHERE username = ?", (username,))
+    cursor.execute("SELECT * FROM wechat_raw_contacts WHERE username = ?", (username,))
     row = cursor.fetchone()
     conn.close()
 
     console.print(f"\n[bold cyan]--- Contact Info: {nickname} ---[/bold cyan]")
     if row:
-        # Assuming schema: username, nickname, type, etc.
-        # Let's just print available data
+        # Assuming schema: username, nickname, type
         console.print(f"Username: {row[0]}")
         console.print(f"Nickname: {row[1]}")
         if len(row) > 2:
@@ -71,15 +70,9 @@ def list_and_open_media(username, mtype):
     conn = get_db_connection()
     cursor = conn.cursor()
     # Actually, WeChat media is organized by contact hash.
-    # Let's search by filename prefix
-
-    if len(username) != 32:
-        # If not a hash, we might need to find the hash for this user
-        # But usually we store by hash.
-        pass
 
     cursor.execute(
-        "SELECT relative_path, content FROM messages WHERE username = ? AND message_type = ?",
+        "SELECT media_path, content FROM wechat_raw_messages WHERE username = ? AND message_type = ?",
         (username, mtype),
     )
     rows = cursor.fetchall()

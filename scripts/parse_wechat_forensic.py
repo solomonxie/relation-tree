@@ -13,6 +13,7 @@ import logging
 import os
 import sqlite3
 from datetime import datetime
+from setup_db import setup_db
 
 # Setup logging
 logging.basicConfig(
@@ -20,7 +21,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
+OUTPUT_DB = "data/db/raw/wechat_forensic.sqlite"
 FORENSIC_DIR = "blobs/wechat_20260627"
 
 
@@ -77,7 +78,7 @@ def main():
         logging.info(f"Forensic directory not found: {FORENSIC_DIR}")
         return
 
-    os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
     parse_forensic_wechat(FORENSIC_DIR, conn)
     conn.commit()

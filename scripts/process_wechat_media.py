@@ -19,8 +19,8 @@ logging.basicConfig(
 
 # Paths
 DB_PATH = "data/db/database.sqlite"
-WECHAT_MEDIA_DIR = "data/media/wechat_media"
-PERSONS_MEDIA_ROOT = "data/media/persons"
+WECHAT_MEDIA_DIR = "data/media"
+PERSONS_MEDIA_ROOT = "data/media"
 
 MODEL_PATH = os.path.expanduser("~/llm_models/modelscope/models/iic/SenseVoiceSmall")
 PYTHON_WITH_FUNASR = "../sermon-voices/venv/bin/python"
@@ -137,7 +137,7 @@ def copy_to_person_media(person_id, src_path, mtype):
         file_data = f.read()
 
     file_hash = hashlib.md5(file_data).hexdigest()[:16]
-    dest_dir = os.path.join(PERSONS_MEDIA_ROOT, folder_hash, "media")
+    dest_dir = os.path.join(PERSONS_MEDIA_ROOT, folder_hash, mtype)
     os.makedirs(dest_dir, exist_ok=True)
 
     dest_filename = f"{file_hash}{file_ext}"

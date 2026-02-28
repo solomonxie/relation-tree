@@ -14,6 +14,7 @@ import os
 import shutil
 import sqlite3
 from datetime import datetime
+from setup_db import setup_db
 
 # Setup logging
 logging.basicConfig(
@@ -21,8 +22,8 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
-MEDIA_OUTPUT_DIR = "data/media/wechat_media"
+OUTPUT_DB = "data/db/raw/wechat_ios.sqlite"
+MEDIA_ROOT = "data/media"
 IOS_BACKUP_DIR = "blobs/Wechat2/4c29b1307decf4b1224800b65ab52a877104e9d3"
 
 
@@ -235,13 +236,14 @@ def parse_ios_backup(backup_dir, out_conn):
                     continue
 
                 parts = rel.split("/")
-                # Flatten structure: directly under mtype, remove source_name prefix
-                dest_rel = (
-                    os.path.join(mtype, *parts[3:])
-                    if len(parts) > 3
-                    else os.path.join(mtype, parts[-1])
-                )
-                dest_path = os.path.join(MEDIA_OUTPUT_DIR, dest_rel)
+                # New structure: data/media/<user_hash>/<type>/<filename>
+                # Preservation of subfolders under <type> if they exist
+                if len(parts) > 3:
+                    dest_rel_path = os.path.join(user_hash, mtype, *parts[3:])
+                else:
+                    dest_rel_path = os.path.join(user_hash, mtype, parts[-1])
+                
+                dest_path = os.path.join(MEDIA_ROOT, dest_rel_path)
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 try:
                     if not os.path.exists(dest_path):
@@ -250,7 +252,7 @@ def parse_ios_backup(backup_dir, out_conn):
                         "INSERT OR IGNORE INTO wechat_raw_media "
                         "(id, username, type, relative_path, original_path, "
                         "file_size, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (fid, user_hash, mtype, dest_rel, rel,
+                        (fid, user_hash, mtype, dest_rel_path, rel,
                          os.path.getsize(dest_path), source_name),
                     )
                     total_media += 1
@@ -267,7 +269,7 @@ def main():
         logging.info(f"Directory not found: {IOS_BACKUP_DIR}")
         return
 
-    os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
     parse_ios_backup(IOS_BACKUP_DIR, conn)
     conn.commit()

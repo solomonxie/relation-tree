@@ -3,15 +3,14 @@ import os
 
 DB_PATH = "data/db/database.sqlite"
 
-def setup_db():
-    if not os.path.exists(os.path.dirname(DB_PATH)):
-        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+def setup_db(db_path=DB_PATH):
+    if not os.path.exists(os.path.dirname(db_path)):
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # 1. wechat_raw_messages
-    # We add msg_hash for global deduplication
     cursor.execute("DROP TABLE IF EXISTS wechat_raw_messages")
     cursor.execute("""
     CREATE TABLE wechat_raw_messages (
@@ -45,7 +44,7 @@ def setup_db():
     """)
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_other_raw_chats_hash ON other_raw_chats (msg_hash)")
 
-    # 3. wechat_raw_contacts (No changes needed for global dedup usually, username is unique)
+    # 3. wechat_raw_contacts
     cursor.execute("DROP TABLE IF EXISTS wechat_raw_contacts")
     cursor.execute("""
     CREATE TABLE wechat_raw_contacts (
@@ -85,7 +84,9 @@ def setup_db():
 
     conn.commit()
     conn.close()
-    print("Database raw tables reset with msg_hash support.")
+    print(f"Database {db_path} raw tables reset.")
 
 if __name__ == "__main__":
-    setup_db()
+    import sys
+    path = sys.argv[1] if len(sys.argv) > 1 else DB_PATH
+    setup_db(path)

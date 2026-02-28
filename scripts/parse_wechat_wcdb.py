@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 import sqlite3
+from setup_db import setup_db
 
 # Setup logging
 logging.basicConfig(
@@ -19,7 +20,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
+OUTPUT_DB = "data/db/raw/wechat_wcdb.sqlite"
 WECHAT_DIR = "blobs/Wechat"
 
 
@@ -155,7 +156,7 @@ def main():
         logging.info(f"Directory not found: {WECHAT_DIR}")
         return
 
-    os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
 
     for f in os.listdir(WECHAT_DIR):

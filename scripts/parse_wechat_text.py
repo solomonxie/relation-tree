@@ -14,6 +14,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime
+from setup_db import setup_db
 
 # Setup logging
 logging.basicConfig(
@@ -21,7 +22,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/database.sqlite"
+OUTPUT_DB = "data/db/raw/wechat_text.sqlite"
 EXPORT_DIR = "blobs/Wechat2/导出"
 
 
@@ -143,7 +144,7 @@ def main():
         logging.info(f"Export directory not found: {EXPORT_DIR}")
         return
 
-    os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
+    setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
     parse_exported_text(EXPORT_DIR, conn)
     conn.commit()
