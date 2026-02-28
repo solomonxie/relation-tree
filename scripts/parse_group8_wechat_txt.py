@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/raw/wechat_text.sqlite"
+OUTPUT_DB = "data/db/raw/group8_wechat_txt.sqlite"
 EXPORT_DIR = "blobs/Wechat2/导出"
 
 

@@ -21,7 +21,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/raw/wechat_forensic.sqlite"
+OUTPUT_DB = "data/db/raw/group9_wechat_forensic.sqlite"
 FORENSIC_DIR = "blobs/wechat_20260627"
 
 

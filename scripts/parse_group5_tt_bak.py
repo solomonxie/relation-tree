@@ -1,10 +1,10 @@
 """
-Other Chat PDF Parser
----------------------
-Target: blobs/others/PDF CHATS/
-Analysis: Chat histories exported as PDF files, often containing a "日期:"
-(Date) header and structured message blocks. Parsed using pdftotext
-with layout preservation.
+Other Chat Binary .bak Parser
+-----------------------------
+Target: blobs/others/QQ/, blobs/others/Tencent TT/
+Analysis: Legacy binary backup files from the QQ messenger and Tencent TT
+browser. These are not directly readable but contain plaintext strings
+mixed with binary metadata. Handled using the 'strings' utility.
 Destination: other_raw_chats
 """
 
@@ -22,8 +22,8 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/raw/others_pdf.sqlite"
-PDF_DIR = "blobs/others/PDF CHATS"
+OUTPUT_DB = "data/db/raw/group5_tt_bak.sqlite"
+OTHERS_DIR = "blobs/others"
 
 
 def compute_msg_hash(username, create_time, content):
@@ -54,105 +54,84 @@ def parse_metadata_only(file_path, cursor, subfolder):
     )
 
 
-def parse_pdf_chat(file_path, cursor, subfolder):
-    """Extracts and parses text from PDF chat logs."""
-    logging.info(f"Parsing PDF chat: {file_path}")
+def parse_bak_chat(file_path, cursor, subfolder):
+    """Extracts human-readable strings from binary .bak files."""
+    logging.info(f"Attempting string extraction from .bak: {file_path}")
     try:
-        # Extract text using pdftotext
+        # Run 'strings' utility to extract plain text
         result = subprocess.run(
-            ["pdftotext", "-layout", file_path, "-"],
-            capture_output=True, text=True
+            ["strings", file_path], capture_output=True, text=True
         )
         if result.returncode != 0:
             parse_metadata_only(file_path, cursor, subfolder)
             return
 
         text = result.stdout
-        if not text.strip():
-            parse_metadata_only(file_path, cursor, subfolder)
-            return
+        filename = os.path.basename(file_path)
+        username = (
+            filename.split("(")[0].strip()
+            if "(" in filename
+            else filename.replace(".bak", "")
+        )
 
         lines = text.splitlines()
-        current_date = None
         total_msgs = 0
-
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            # Look for "日期: YYYY-MM-DD" header
-            date_match = re.match(r"日期:\s*(\d{4}-\d{2}-\d{2})", line)
-            if date_match:
-                current_date = date_match.group(1)
-                i += 1
-                continue
-
-            # Look for "User HH:MM:SS" header
-            header_match = re.match(r"^(.*?)\s+(\d{2}:\d{2}:\d{2})$", line)
-            if header_match and current_date:
-                username = header_match.group(1).strip()
-                time_str = header_match.group(2)
-                timestamp_str = f"{current_date} {time_str}"
-
-                # Gather content lines until next header
-                content_lines = []
-                i += 1
-                while i < len(lines):
-                    next_line = lines[i].strip()
-                    if re.match(r"日期:\s*\d{4}-\d{2}-\d{2}", next_line) or \
-                       re.match(r"^.*?\s+\d{2}:\d{2}:\d{2}$", next_line):
-                        break
-                    if next_line:
-                        content_lines.append(next_line)
-                    i += 1
-
-                msg_content = "\n".join(content_lines).strip()
-                if msg_content:
+        for line in lines:
+            # Look for timestamps embedded in lines
+            match = re.search(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})", line)
+            if match:
+                ts_str = f"{match.group(1)} {match.group(2)}"
+                content = line.replace(ts_str, "").strip()
+                if content:
                     try:
                         ts = int(
                             datetime.strptime(
-                                timestamp_str, "%Y-%m-%d %H:%M:%S"
+                                ts_str, "%Y-%m-%d %H:%M:%S"
                             ).timestamp()
                         )
-                        m_hash = compute_msg_hash(username, ts, msg_content)
+                        m_hash = compute_msg_hash(username, ts, content)
                         cursor.execute(
                             "INSERT OR IGNORE INTO other_raw_chats "
                             "(source_file, username, create_time, content, "
                             "platform, subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            (file_path, username, ts, msg_content, "pdf_regex",
+                            (file_path, username, ts, content, "bak_strings",
                              subfolder, m_hash),
                         )
                         total_msgs += 1
                     except Exception:
-                        pass
-                continue
-            i += 1
-
+                        continue
         if total_msgs == 0:
             parse_metadata_only(file_path, cursor, subfolder)
         else:
             logging.info(f"Extracted {total_msgs} messages.")
-
     except Exception as e:
-        logging.error(f"Error parsing PDF {file_path}: {e}")
+        logging.error(f"Error parsing .bak {file_path}: {e}")
         parse_metadata_only(file_path, cursor, subfolder)
 
 
 def main():
-    if not os.path.exists(PDF_DIR):
-        logging.info(f"PDF directory not found: {PDF_DIR}")
+    if not os.path.exists(OTHERS_DIR):
+        logging.info(f"Others directory not found: {OTHERS_DIR}")
         return
 
     setup_db(OUTPUT_DB)
     conn = sqlite3.connect(OUTPUT_DB)
     cursor = conn.cursor()
 
-    for f in os.listdir(PDF_DIR):
-        if f.endswith(".pdf"):
-            parse_pdf_chat(os.path.join(PDF_DIR, f), cursor, "PDF CHATS")
+    # Walk through OTHERS_DIR and identify subdirectories
+    for item in os.listdir(OTHERS_DIR):
+        item_path = os.path.join(OTHERS_DIR, item)
+        if os.path.isdir(item_path):
+            for root, _, files in os.walk(item_path):
+                for f in files:
+                    if f.lower().endswith(".bak"):
+                        parse_bak_chat(os.path.join(root, f), cursor, item)
+        elif item.lower().endswith(".bak"):
+            parse_bak_chat(item_path, cursor, "root")
 
     conn.commit()
     conn.close()
-    logging.info("PDF Chat parsing finished.")
+    logging.info("QQ .bak parsing finished.")
 
 
 if __name__ == "__main__":

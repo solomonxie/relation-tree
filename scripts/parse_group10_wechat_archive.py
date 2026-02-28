@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/raw/wechat_archives.sqlite"
+OUTPUT_DB = "data/db/raw/group10_wechat_archive.sqlite"
 ARCHIVES_DIR = "blobs/Wechat3"
 
 

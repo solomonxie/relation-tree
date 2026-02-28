@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 
 # Paths
-OUTPUT_DB = "data/db/raw/wechat_ios.sqlite"
+OUTPUT_DB = "data/db/raw/group11_wechat_ios_2016.sqlite"
 MEDIA_ROOT = "data/media"
 IOS_BACKUP_DIR = "blobs/Wechat2/4c29b1307decf4b1224800b65ab52a877104e9d3"
 
