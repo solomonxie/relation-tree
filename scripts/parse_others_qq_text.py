@@ -8,6 +8,7 @@ regex parsing for date, time, and sender.
 Destination: other_raw_chats
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -22,6 +23,12 @@ logging.basicConfig(
 # Paths
 OUTPUT_DB = "data/db/database.sqlite"
 OTHERS_DIR = "blobs/others"
+
+
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
 
 
 def parse_qq_text_chat(file_path, cursor, subfolder):
@@ -48,13 +55,14 @@ def parse_qq_text_chat(file_path, cursor, subfolder):
             if match:
                 # Save previous message
                 if current_user and current_ts and current_content:
+                    msg_content = "\n".join(current_content)
+                    m_hash = compute_msg_hash(current_user, current_ts, msg_content)
                     cursor.execute(
                         "INSERT OR IGNORE INTO other_raw_chats "
                         "(source_file, username, create_time, content, "
-                        "platform, subfolder) VALUES (?, ?, ?, ?, ?, ?)",
+                        "platform, subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (file_path, current_user, current_ts,
-                         "
-".join(current_content), "qq_text", subfolder),
+                         msg_content, "qq_text", subfolder, m_hash),
                     )
                     total_msgs += 1
 
@@ -73,13 +81,14 @@ def parse_qq_text_chat(file_path, cursor, subfolder):
 
         # Save last message
         if current_user and current_ts and current_content:
+            msg_content = "\n".join(current_content)
+            m_hash = compute_msg_hash(current_user, current_ts, msg_content)
             cursor.execute(
                 "INSERT OR IGNORE INTO other_raw_chats "
                 "(source_file, username, create_time, content, platform, "
-                "subfolder) VALUES (?, ?, ?, ?, ?, ?)",
+                "subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (file_path, current_user, current_ts,
-                 "
-".join(current_content), "qq_text", subfolder),
+                 msg_content, "qq_text", subfolder, m_hash),
             )
             total_msgs += 1
         logging.info(f"Extracted {total_msgs} messages.")

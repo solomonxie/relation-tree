@@ -8,6 +8,7 @@ with layout preservation.
 Destination: other_raw_chats
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -25,6 +26,12 @@ OUTPUT_DB = "data/db/database.sqlite"
 PDF_DIR = "blobs/others/PDF CHATS"
 
 
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+
+
 def parse_metadata_only(file_path, cursor, subfolder):
     """Logs metadata for files where content cannot be parsed."""
     filename = os.path.basename(file_path)
@@ -36,13 +43,14 @@ def parse_metadata_only(file_path, cursor, subfolder):
         else filename.replace(ext, "")
     )
     mtime = int(os.path.getmtime(file_path))
+    content = f"[Metadata Only] Chat log: {filename}"
+    m_hash = compute_msg_hash(username, mtime, content)
 
     cursor.execute(
         "INSERT OR IGNORE INTO other_raw_chats "
-        "(source_file, username, create_time, content, platform, subfolder) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (file_path, username, mtime, f"[Metadata Only] Chat log: {filename}",
-         platform, subfolder),
+        "(source_file, username, create_time, content, platform, subfolder, msg_hash) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (file_path, username, mtime, content, platform, subfolder, m_hash),
     )
 
 
@@ -90,28 +98,28 @@ def parse_pdf_chat(file_path, cursor, subfolder):
                 i += 1
                 while i < len(lines):
                     next_line = lines[i].strip()
-                    if re.match(r"日期:\s*\d{4}-\d{2}-\d{2}", next_line) or 
+                    if re.match(r"日期:\s*\d{4}-\d{2}-\d{2}", next_line) or \
                        re.match(r"^.*?\s+\d{2}:\d{2}:\d{2}$", next_line):
                         break
                     if next_line:
                         content_lines.append(next_line)
                     i += 1
 
-                content = "
-".join(content_lines).strip()
-                if content:
+                msg_content = "\n".join(content_lines).strip()
+                if msg_content:
                     try:
                         ts = int(
                             datetime.strptime(
                                 timestamp_str, "%Y-%m-%d %H:%M:%S"
                             ).timestamp()
                         )
+                        m_hash = compute_msg_hash(username, ts, msg_content)
                         cursor.execute(
                             "INSERT OR IGNORE INTO other_raw_chats "
                             "(source_file, username, create_time, content, "
-                            "platform, subfolder) VALUES (?, ?, ?, ?, ?, ?)",
-                            (file_path, username, ts, content, "pdf_regex",
-                             subfolder),
+                            "platform, subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (file_path, username, ts, msg_content, "pdf_regex",
+                             subfolder, m_hash),
                         )
                         total_msgs += 1
                     except Exception:

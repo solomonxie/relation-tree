@@ -66,6 +66,12 @@ def verify_insertion(out_conn, table, source, expected_min=1):
     return count
 
 
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+
+
 def parse_ios_backup(backup_dir, out_conn):
     """Main parsing logic for iOS backups."""
     logging.info(f"Parsing iOS backup: {backup_dir}")
@@ -155,10 +161,11 @@ def parse_ios_backup(backup_dir, out_conn):
                 )
                 rows = cursor.fetchall()
                 for row in rows:
+                    m_hash = compute_msg_hash(row[1], row[3], row[4])
                     out_cursor.execute(
                         "INSERT OR IGNORE INTO wechat_moments "
-                        "(id, username, nickname, create_time, content) "
-                        "VALUES (?, ?, ?, ?, ?)", row,
+                        "(id, username, nickname, create_time, content, msg_hash) "
+                        "VALUES (?, ?, ?, ?, ?, ?)", (*row, m_hash),
                     )
                 logging.info(f"Processed {len(rows)} moments.")
             except Exception as e:
@@ -187,11 +194,12 @@ def parse_ios_backup(backup_dir, out_conn):
                     rows = cursor.fetchall()
                     for row in rows:
                         username = user_map.get(row[0], f"unknown_{row[0]}")
+                        m_hash = compute_msg_hash(username, row[1], row[2])
                         out_cursor.execute(
                             "INSERT OR IGNORE INTO wechat_raw_messages "
                             "(username, create_time, content, local_id, "
-                            "source) VALUES (?, ?, ?, ?, ?)",
-                            (username, row[1], row[2], row[3], source_name),
+                            "source, msg_hash) VALUES (?, ?, ?, ?, ?, ?)",
+                            (username, row[1], row[2], row[3], source_name, m_hash),
                         )
                     total_msgs += len(rows)
                 logging.info(f"Processed {total_msgs} messages.")
@@ -227,10 +235,11 @@ def parse_ios_backup(backup_dir, out_conn):
                     continue
 
                 parts = rel.split("/")
+                # Flatten structure: directly under mtype, remove source_name prefix
                 dest_rel = (
-                    os.path.join(source_name, mtype, *parts[3:])
+                    os.path.join(mtype, *parts[3:])
                     if len(parts) > 3
-                    else os.path.join(source_name, mtype, parts[-1])
+                    else os.path.join(mtype, parts[-1])
                 )
                 dest_path = os.path.join(MEDIA_OUTPUT_DIR, dest_rel)
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)

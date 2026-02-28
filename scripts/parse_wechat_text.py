@@ -25,6 +25,12 @@ OUTPUT_DB = "data/db/database.sqlite"
 EXPORT_DIR = "blobs/Wechat2/导出"
 
 
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+
+
 def verify_insertion(out_conn, table, source, expected_min=1):
     """Verify that records were inserted for a specific source."""
     cursor = out_conn.cursor()
@@ -70,8 +76,7 @@ def parse_exported_text(export_dir, out_conn):
                 logging.error(f"Could not read {filename} with any encoding.")
                 continue
 
-            lines = content.split("
-")
+            lines = content.split("\n")
             for line in lines:
                 # Regex for common WeChat export formats
                 match = re.match(
@@ -101,13 +106,14 @@ def parse_exported_text(export_dir, out_conn):
                         continue
 
                     local_id = int(hashlib.md5(line.encode()).hexdigest()[:8], 16)
+                    m_hash = compute_msg_hash(username, ts, msg_content.strip())
 
                     out_cursor.execute(
                         "INSERT OR IGNORE INTO wechat_raw_messages "
-                        "(username, create_time, content, local_id, source) "
-                        "VALUES (?, ?, ?, ?, ?)",
+                        "(username, create_time, content, local_id, source, "
+                        "msg_hash) VALUES (?, ?, ?, ?, ?, ?)",
                         (username, ts, msg_content.strip(), local_id,
-                         source_name),
+                         source_name, m_hash),
                     )
                     total_msgs += 1
 

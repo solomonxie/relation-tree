@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 
 # Use logic from related WeChat parsers for consistent extraction
-from parse_wechat_sqlite import parse_direct_sqlite
+from parse_wechat_wcdb import parse_wcdb_sqlite
 from parse_wechat_text import parse_exported_text
 
 # Setup logging
@@ -44,7 +44,7 @@ def parse_compressed_source(archive_path, out_conn):
                 fpath = os.path.join(root, f)
                 # Check for direct database files
                 if f.endswith((".sqlite", ".db")):
-                    parse_direct_sqlite(fpath, out_conn)
+                    parse_wcdb_sqlite(fpath, out_conn)
                 # Check for exported text files
                 elif f.endswith(".txt"):
                     # Many archives bundle text exports in a subfolder

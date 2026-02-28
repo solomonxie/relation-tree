@@ -30,6 +30,70 @@ VISION_MODEL = "llava:7b"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 CIPHER = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
 
+try:
+    import pilk
+    HAS_PILK = True
+except ImportError:
+    HAS_PILK = False
+
+
+def convert_silk_to_mp3(src_path):
+    """Converts WeChat Silk (.aud/.silk) to MP3 using pilk and ffmpeg."""
+    if not HAS_PILK:
+        return src_path
+
+    # Check for silk v3 header (might have 0x02 prefix)
+    with open(src_path, "rb") as f:
+        header = f.read(10)
+    
+    is_silk = False
+    actual_silk_path = src_path
+    temp_silk = None
+
+    if header.startswith(b"#!SILK_V3"):
+        is_silk = True
+    elif header.startswith(b"\x02#!SILK_V3"):
+        is_silk = True
+        # Need to strip the first byte for some decoders, 
+        # but pilk might handle it or we might need a temp file.
+        temp_silk = src_path + ".tmp.silk"
+        with open(src_path, "rb") as f:
+            f.seek(1)
+            with open(temp_silk, "wb") as tf:
+                tf.write(f.read())
+        actual_silk_path = temp_silk
+
+    if not is_silk:
+        return src_path
+
+    dest_path = os.path.splitext(src_path)[0] + ".mp3"
+    pcm_path = src_path + ".pcm"
+    
+    try:
+        # 1. Decode Silk to PCM
+        pilk.decode(actual_silk_path, pcm_path)
+        
+        # 2. Encode PCM to MP3
+        cmd = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "s16le", "-ar", "24000", "-ac", "1",
+            "-i", pcm_path,
+            dest_path
+        ]
+        subprocess.run(cmd, check=True)
+        
+        # Cleanup originals
+        os.remove(src_path)
+        return dest_path
+    except Exception as e:
+        logging.error(f"Error converting silk {src_path}: {e}")
+        return src_path
+    finally:
+        if os.path.exists(pcm_path):
+            os.remove(pcm_path)
+        if temp_silk and os.path.exists(temp_silk):
+            os.remove(temp_silk)
+
 
 def get_wechat_person_mapping():
     """Returns a dict mapping wechat username/hash to person_id."""
@@ -210,6 +274,21 @@ def process_media():
         abs_path = os.path.join(WECHAT_MEDIA_DIR, rel_path)
         if not os.path.exists(abs_path):
             continue
+
+        # Convert audio if needed
+        original_abs_path = abs_path
+        if mtype == "audio" and abs_path.lower().endswith((".aud", ".silk")):
+            new_abs_path = convert_silk_to_mp3(abs_path)
+            if new_abs_path != abs_path:
+                abs_path = new_abs_path
+                # Update DB for the new extension/path
+                new_rel_path = os.path.relpath(abs_path, WECHAT_MEDIA_DIR)
+                new_size = os.path.getsize(abs_path)
+                cursor.execute(
+                    "UPDATE wechat_raw_media SET relative_path = ?, original_path = original_path || ' (converted to mp3)', file_size = ? WHERE id = ?",
+                    (new_rel_path, new_size, mid)
+                )
+                rel_path = new_rel_path
 
         cursor.execute(
             "SELECT content, media_id FROM wechat_raw_messages WHERE media_path = ?",

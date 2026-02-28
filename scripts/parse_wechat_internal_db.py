@@ -8,6 +8,7 @@ extraction or migrations). These contain 'wechat_raw_messages',
 Destination: wechat_raw_contacts, wechat_raw_messages, wechat_moments, wechat_raw_media
 """
 
+import hashlib
 import logging
 import os
 import sqlite3
@@ -33,6 +34,12 @@ def verify_insertion(out_conn, table, source, expected_min=1):
         f"(expected ~{expected_min})."
     )
     return count
+
+
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
 
 
 def parse_internal_sqlite(sqlite_path, out_conn):
@@ -91,10 +98,11 @@ def parse_internal_sqlite(sqlite_path, out_conn):
         )
     count = 0
     for row in cursor.fetchall():
+        m_hash = compute_msg_hash(row[0], row[1], row[2])
         out_cursor.execute(
             "INSERT OR IGNORE INTO wechat_raw_messages "
-            "(username, create_time, content, local_id, source) "
-            "VALUES (?, ?, ?, ?, ?)", (*row, source_name),
+            "(username, create_time, content, local_id, source, msg_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?)", (*row, source_name, m_hash),
         )
         count += 1
     verify_insertion(
@@ -112,10 +120,11 @@ def parse_internal_sqlite(sqlite_path, out_conn):
             "SELECT id, username, nickname, create_time, content FROM moments"
         )
     for row in cursor.fetchall():
+        m_hash = compute_msg_hash(row[1], row[3], row[4])
         out_cursor.execute(
             "INSERT OR IGNORE INTO wechat_moments "
-            "(id, username, nickname, create_time, content) "
-            "VALUES (?, ?, ?, ?, ?)", row,
+            "(id, username, nickname, create_time, content, msg_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?)", (*row, m_hash),
         )
 
     # 4. Copy Media

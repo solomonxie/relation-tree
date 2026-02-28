@@ -8,6 +8,7 @@ often encrypted or in proprietary formats.
 Destination: wechat_raw_contacts, other_raw_chats
 """
 
+import hashlib
 import logging
 import os
 import sqlite3
@@ -21,6 +22,12 @@ logging.basicConfig(
 # Paths
 OUTPUT_DB = "data/db/database.sqlite"
 FORENSIC_DIR = "blobs/wechat_20260627"
+
+
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
 
 
 def parse_forensic_wechat(forensic_dir, out_conn):
@@ -49,13 +56,16 @@ def parse_forensic_wechat(forensic_dir, out_conn):
                 )
 
                 # Track presence of encrypted data in other_raw_chats
+                content = f"[Encrypted Forensic Data] Hash: {user_hash}"
+                ts = int(datetime.now().timestamp())
+                m_hash = compute_msg_hash(user_hash, ts, content)
+                
                 out_cursor.execute(
                     "INSERT OR IGNORE INTO other_raw_chats "
                     "(source_file, username, create_time, content, "
-                    "platform, subfolder) VALUES (?, ?, ?, ?, ?, ?)",
-                    (user_path, user_hash, int(datetime.now().timestamp()),
-                     f"[Encrypted Forensic Data] Hash: {user_hash}",
-                     "forensic_encrypted", "wechat_20260627"),
+                    "platform, subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (user_path, user_hash, ts, content,
+                     "forensic_encrypted", "wechat_20260627", m_hash),
                 )
                 total_found += 1
 

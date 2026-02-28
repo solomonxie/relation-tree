@@ -8,6 +8,7 @@ tables.
 Destination: wechat_raw_contacts, wechat_raw_messages
 """
 
+import hashlib
 import logging
 import os
 import sqlite3
@@ -33,6 +34,12 @@ def verify_insertion(out_conn, table, source, expected_min=1):
         f"(expected ~{expected_min})."
     )
     return count
+
+
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
 
 
 def parse_wcdb_sqlite(sqlite_path, out_conn):
@@ -124,11 +131,12 @@ def parse_wcdb_sqlite(sqlite_path, out_conn):
                 cursor.execute(f"SELECT {t_col}, {m_col}, {l_col} FROM {table}")
                 rows = cursor.fetchall()
                 for row in rows:
+                    m_hash = compute_msg_hash(hash_id, row[0], row[1])
                     out_cursor.execute(
                         "INSERT OR IGNORE INTO wechat_raw_messages "
-                        "(username, create_time, content, local_id, source) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (hash_id, row[0], row[1], row[2], source_name),
+                        "(username, create_time, content, local_id, source, "
+                        "msg_hash) VALUES (?, ?, ?, ?, ?, ?)",
+                        (hash_id, row[0], row[1], row[2], source_name, m_hash),
                     )
                 total_msgs += len(rows)
         except Exception as e:

@@ -8,6 +8,7 @@ mixed with binary metadata. Handled using the 'strings' utility.
 Destination: other_raw_chats
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -25,6 +26,12 @@ OUTPUT_DB = "data/db/database.sqlite"
 OTHERS_DIR = "blobs/others"
 
 
+def compute_msg_hash(username, create_time, content):
+    """Computes a unique hash for a message to prevent global duplicates."""
+    base_str = f"{username}|{create_time}|{content}"
+    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+
+
 def parse_metadata_only(file_path, cursor, subfolder):
     """Logs metadata for files where content cannot be parsed."""
     filename = os.path.basename(file_path)
@@ -36,13 +43,14 @@ def parse_metadata_only(file_path, cursor, subfolder):
         else filename.replace(ext, "")
     )
     mtime = int(os.path.getmtime(file_path))
+    content = f"[Metadata Only] Chat log: {filename}"
+    m_hash = compute_msg_hash(username, mtime, content)
 
     cursor.execute(
         "INSERT OR IGNORE INTO other_raw_chats "
-        "(source_file, username, create_time, content, platform, subfolder) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (file_path, username, mtime, f"[Metadata Only] Chat log: {filename}",
-         platform, subfolder),
+        "(source_file, username, create_time, content, platform, subfolder, msg_hash) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (file_path, username, mtime, content, platform, subfolder, m_hash),
     )
 
 
@@ -81,12 +89,13 @@ def parse_bak_chat(file_path, cursor, subfolder):
                                 ts_str, "%Y-%m-%d %H:%M:%S"
                             ).timestamp()
                         )
+                        m_hash = compute_msg_hash(username, ts, content)
                         cursor.execute(
                             "INSERT OR IGNORE INTO other_raw_chats "
                             "(source_file, username, create_time, content, "
-                            "platform, subfolder) VALUES (?, ?, ?, ?, ?, ?)",
+                            "platform, subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
                             (file_path, username, ts, content, "bak_strings",
-                             subfolder),
+                             subfolder, m_hash),
                         )
                         total_msgs += 1
                     except Exception:

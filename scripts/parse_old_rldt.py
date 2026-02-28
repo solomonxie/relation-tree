@@ -2,12 +2,10 @@ import os
 import sqlite3
 import zipfile
 import hashlib
-import secrets
 import csv
 from pathlib import Path
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -71,12 +69,17 @@ def process_zips():
         actual_name = person_map.get(pid, f"Person {pid}")
         folder_hash = hashlib.md5(f"{actual_name}_{pid}".encode()).hexdigest()[:16]
 
-        # Insert person
+        # Insert person (OR IGNORE to prevent unique constraint failures)
         cursor.execute(
-            "INSERT INTO persons (name, folder_hash) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO persons (name, folder_hash) VALUES (?, ?)",
             (actual_name, folder_hash),
         )
-        person_id = cursor.lastrowid
+        # If ignore occurred, we need to fetch the existing ID
+        if cursor.rowcount == 0:
+            cursor.execute("SELECT id FROM persons WHERE folder_hash = ?", (folder_hash,))
+            person_id = cursor.fetchone()[0]
+        else:
+            person_id = cursor.lastrowid
 
         print(
             f"Processing {actual_name} (PID: {pid}, ID: {person_id}, Hash: {folder_hash})..."
@@ -92,12 +95,20 @@ def process_zips():
                 if filename.startswith(".") or filename == "Thumbs.db":
                     continue
 
-                # RLDT often has a naming convention: 185_1.jpg -> original name might be in CSV or just use filename
                 final_original_name = filename
 
                 with z.open(file_info) as f:
                     file_data = f.read()
                     file_hash_16 = get_file_hash(file_data)
+                    
+                    # Check if media already exists
+                    cursor.execute(
+                        "SELECT id FROM media WHERE file_hash = ? AND person_id = ?",
+                        (file_hash_16, person_id)
+                    )
+                    if cursor.fetchone():
+                        continue
+
                     encrypted_data = encrypt_data(file_data)
 
                     # Determine file type (extension)
@@ -108,7 +119,8 @@ def process_zips():
 
                     cursor.execute(
                         """
-                        INSERT INTO media (person_id, file_path, file_type, original_filename, file_hash, encryption_status)
+                        INSERT INTO media (person_id, file_path, file_type, 
+                        original_filename, file_hash, encryption_status)
                         VALUES (?, ?, ?, ?, ?, 1)
                     """,
                         (
