@@ -27,6 +27,7 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "ollama")
 MODEL_NAME = os.getenv("LLM_MODEL", "llama3:latest")
 
 OUTPUT_DB = "data/db/raw/group1_html.sqlite"
+OWNER_NAME = '几何体'
 
 
 def parse_file(filepath):
@@ -49,10 +50,10 @@ def parse_file(filepath):
             qq_match = re.match(r'(\d+)', name)
             if qq_match:
                 qqid = int(qq_match[0])
-            else:
+            elif name != OWNER_NAME:
                 name_counter[name] += 1
         elif line.startswith('消息分组:'):
-            group_name = line.replace('消息分组:已删除联系人', '').strip()
+            group_name = line.replace('消息分组:', '').strip()
         elif line.startswith('日期:'):
             date_match = re.match(r'^\s*(\d{4}-\d{2}-\d{2})$', lines[i+1])
             if date_match:
@@ -63,15 +64,13 @@ def parse_file(filepath):
             # Stop collection for current message:
             if msg_start > 0:
                 msg = '\n'.join(lines[msg_start: i-1]).strip()  # fixme: the slicing isn't right
-                print(f'Read message [{name}]: {msg}')
-                # todo: insert name, msg, date, time into db...
+                print(f'Read message [{name}] [{group_name}] [{date_} {time_}]: {msg}')
             # Start a new message collection:
             msg_start = i + 2
             time_ = time_match[0]
             name = lines[i-1].strip()  # todo: remove special characters
-            name_counter[name] += 1
-            date_ = '1900-01-01'
-            time_ = '00:00:00'
+            if name != OWNER_NAME:
+                name_counter[name] += 1
         i += 1
     return
 
