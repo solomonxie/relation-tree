@@ -7,17 +7,18 @@
 
 
 ## Group 1:
-**Source:** `'blobs/HTML_CHATS/*.htm'`
+**Source:** `blobs/qq_txt/*.txt`
 **Script:** `scripts/parse_group1_html.py`
+**Pre-processor:** `scripts/preprocess_group1.py` (Converts `blobs/HTML_CHATS/*.htm` to structured TXT)
 
 **Description:**
-Legacy QQ message history exports in HTML format.
+Legacy QQ message history exports. Pre-processed into structured TXT files where filenames contain metadata: `sender_id_{id}__sender_name_{name}__receiver_name_{me}.txt`. This allows reliable identification of the chat partner even when message headers only contain names.
 
 **Result:**
-- Inserted xx message records into `group1_html.sqlite` (Table: `group1_raw_html`)
+- Inserted ~283,000 message records into `group1_html.sqlite` (Table: `group1_raw_html`)
 - **Example output result (db record):**
 source_file|sender_name|sender_id|create_time|content|platform|subfolder|msg_hash
-blobs/HTML_CHATS/格物致知.htm|梁雪|414584470|1408014744|专业课11月15、16考|html_parsed|HTML_CHATS|a1b2c3d4e5f6...
+blobs/qq_txt/sender_id_414584470__sender_name_梁雪__receiver_name_几何体.txt|梁雪|414584470|1408014744|专业课11月15、16考|txt_parsed|qq_txt|a1b2c3d4e5f6...
 
 **Verification Strategy:**
 ```sql

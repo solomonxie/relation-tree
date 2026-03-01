@@ -5,6 +5,7 @@ blobs/*
 data/db/*
 !data/db/README.md
 data/media/*
+data/log/*
 
 venv/*
 
