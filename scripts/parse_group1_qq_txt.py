@@ -78,7 +78,7 @@ def parse_file(filepath):
 def main():
     files = glob("blobs/qq_txt/*.txt")
     logging.info(f"Found {len(files)} files to process.")
-    for filepath in files:
+    for filepath in sorted(files):
         try:
             parse_file(filepath)
         except Exception as e:
