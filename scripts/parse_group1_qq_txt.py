@@ -6,9 +6,10 @@ Features:
 3. Correctly handles Group vs Person chats.
 """
 
-import logging
 import os
 import re
+import sys
+import logging
 from glob import glob
 from collections import defaultdict
 from dotenv import load_dotenv
@@ -25,9 +26,15 @@ LLM_API_BASE = os.getenv("LLM_API_BASE", "http://localhost:11434/v1")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "ollama")
 MODEL_NAME = os.getenv("LLM_MODEL", "llama3:latest")
 
-# OUTPUT_DB = "data/db/raw/group1_html.sqlite"
 OWNER_NAME = '几何体'
 
+def clean_msg(msg):
+    # Remove styling tags like ','MS Sans Serif',sans-serif;" color='000000'>
+    # Targeting font family, color, and size styling tags commonly found in QQ logs
+    msg = re.sub(r"[^>\n]*'(?:MS Sans Serif|Tahoma|Arial|宋体|微软雅黑|Times New Roman)'[^>\n]*>", "", msg)
+    # Generic cleanup for remaining font/color markers
+    msg = re.sub(r"<font[^>]*>|</font>", "", msg)
+    return msg.strip()
 
 def parse_file(filepath):
     print(f'processing {filepath}')
@@ -45,7 +52,6 @@ def parse_file(filepath):
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        # todo: remove `','MS Sans Serif',sans-serif;" color='000000'>` if appears in line
         time_match = re.match(r'^(\d{1,2}:\d{2}:\d{2})$', line)
 
         if line.startswith('消息对象:'):
@@ -53,25 +59,32 @@ def parse_file(filepath):
             qq_match = re.search(r'(\d+)', obj_name)
             if qq_match:
                 qqid = qq_match.group(1)
-            elif obj_name != OWNER_NAME:
+            if obj_name != OWNER_NAME:
                 name_counter[obj_name] += 1
         elif line.startswith('消息分组:'):
             group_name = line.replace('消息分组:', '').strip()
         elif line.startswith('日期:'):
             if msg_start > 0:
-                msg = '\n'.join(lines[msg_start:i]).strip()
-                print(f'Read message [{name}] [{group_name}] [{date_} {time_}]: {msg}')
+                msg = clean_msg('\n'.join(lines[msg_start:i]))
+                if msg:
+                    print(f'Read message [{name}] [{group_name}] [{date_} {time_}]: {msg}')
                 msg_start = 0
 
-            if i + 1 < len(lines):
+            # Check current line first
+            date_match = re.search(r'(\d{4}-\d{2}-\d{2})', line)
+            if date_match:
+                date_ = date_match.group(1)
+            elif i + 1 < len(lines):
+                # Check next line
                 date_match = re.search(r'(\d{4}-\d{2}-\d{2})', lines[i+1])
                 if date_match:
                     date_ = date_match.group(1)
                     i += 1
         elif time_match:
             if msg_start > 0:
-                msg = '\n'.join(lines[msg_start:i-1]).strip()
-                print(f'Read message [{name}] [{date_} {time_}]: {msg}')
+                msg = clean_msg('\n'.join(lines[msg_start:i-1]))
+                if msg:
+                    print(f'Read message [{name}] [{group_name}] [{date_} {time_}]: {msg}')
 
             time_ = time_match.group(1)
             name = lines[i-1].strip()
@@ -81,13 +94,17 @@ def parse_file(filepath):
         i += 1
 
     if msg_start > 0:
-        msg = '\n'.join(lines[msg_start:]).strip()
-        print(f'Read message [{name}] [{group_name}] [{date_} {time_}]: {msg}')
+        msg = clean_msg('\n'.join(lines[msg_start:]))
+        if msg:
+            print(f'Read message [{name}] [{group_name}] [{date_} {time_}]: {msg}')
     return
 
 
 def main():
-    files = glob("blobs/qq_txt/*.txt")
+    if len(sys.argv) > 1:
+        files = [sys.argv[1]]
+    else:
+        files = glob("blobs/qq_txt/*.txt")
     logging.info(f"Found {len(files)} files to process.")
     for filepath in sorted(files):
         try:
