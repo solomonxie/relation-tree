@@ -28,7 +28,7 @@ SELECT COUNT(*) FROM group1_raw_html;
 
 
 ## Group 2:
-**Source:** `blobs/MHTML_CHATS/*.mht`
+**Source:** `blobs/qq_mht/*.mht`
 **Script:** `scripts/parse_group2_mhtml.py`
 
 **Description:**
