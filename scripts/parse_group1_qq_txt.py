@@ -28,26 +28,18 @@ MODEL_NAME = os.getenv("LLM_MODEL", "llama3:latest")
 
 OWNER_NAME = '几何体'
 
-def clean_msg(msg):
-    # Remove styling tags like ','MS Sans Serif',sans-serif;" color='000000'>
-    msg = re.sub(r"[^>\n]*'(?:MS Sans Serif|Tahoma|Arial|宋体|微软雅黑|Times New Roman)'[^>\n]*>", "", msg)
-    # Generic cleanup for remaining font/color markers
-    msg = re.sub(r"<font[^>]*>|</font>", "", msg)
-    return msg.strip()
-
 def parse_file(filepath):
     print(f'processing {filepath}')
-    name_counter = defaultdict(int)
-    qqid = '00000000'
+    name = os.path.basename(filepath).split('_')[0]
+    nicknames = set()
+    qqid = os.path.basename(filepath).split('_')[1]
     date_ = '1900-01-01'
     time_ = '00:00:00'
-    name = ''
-    msg_start = 0
 
     with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.read().splitlines()
 
-    i = 0
+    i, msg_start = 0, 0
     while i <= len(lines):
         # Use a dummy marker to trigger the final flush at the end of the file
         line = lines[i].strip() if i < len(lines) else "日期: END"
@@ -74,20 +66,28 @@ def parse_file(filepath):
                 msg_start = 0  # Wait for next time_match to start a message
             else:
                 # time_match found: name is always on the previous line
-                name = lines[i-1].strip()
                 time_ = time_match.group(1)
                 msg_start = i + 1
-                if name != OWNER_NAME:
-                    name_counter[name] += 1
+                sender = lines[i-1].strip()
+                if sender != OWNER_NAME:
+                    nicknames.add(sender)
         elif line.startswith('消息对象:'):
-            obj_name = line.replace('消息对象:', '').strip()
-            qq_match = re.search(r'(\d+)', obj_name)
+            sender = line.replace('消息对象:', '').strip()
+            qq_match = re.search(r'(\d+)', sender)
             if qq_match:
                 qqid = qq_match.group(1)
-            if obj_name != OWNER_NAME:
-                name_counter[obj_name] += 1
+            if sender != OWNER_NAME:
+                nicknames.add(sender)
         i += 1
     return
+
+
+def clean_msg(msg):
+    # Remove styling tags like ','MS Sans Serif',sans-serif;" color='000000'>
+    msg = re.sub(r"[^>\n]*'(?:MS Sans Serif|Tahoma|Arial|宋体|微软雅黑|Times New Roman)'[^>\n]*>", "", msg)
+    # Generic cleanup for remaining font/color markers
+    msg = re.sub(r"<font[^>]*>|</font>", "", msg)
+    return msg.strip()
 
 
 def main():
