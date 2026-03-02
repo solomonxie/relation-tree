@@ -1,5 +1,5 @@
-DROP TABLE IF EXISTS other_raw_chats;
-CREATE TABLE other_raw_chats (
+DROP TABLE IF EXISTS group1_qq_txt_raw_chats;
+CREATE TABLE group1_qq_txt_raw_chats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_file TEXT,
     username TEXT,
@@ -10,4 +10,10 @@ CREATE TABLE other_raw_chats (
     subfolder TEXT,
     msg_hash TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_other_raw_chats_hash ON other_raw_chats (msg_hash);
+
+DROP TABLE IF EXISTS group1_qq_txt_contacts;
+CREATE TABLE group1_qq_txt_contacts (
+    qqid TEXT PRIMARY KEY,
+    name TEXT,
+    nicknames TEXT
+);

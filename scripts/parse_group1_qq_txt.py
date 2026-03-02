@@ -83,38 +83,24 @@ def parse_file(filepath, cursor):
                 msg = clean_msg('\n'.join(lines[msg_start:end_idx+1]))
                 last_content_end_idx = end_idx
                 if msg:
-                    # Logic for sender and nickname:
-                    # raw_sender is the name extracted from the text
-                    # If raw_sender matches OWNER_NAME, the official sender (username) is OWNER_NAME.
-                    # Otherwise, the official sender is the contact_name from the filename.
-                    # The original raw_sender is always stored as nickname.
-
-                    # Nudge handling can override raw_sender if it looks like a system message
                     if "窗口抖动" in msg:
                         if "您发送了一个" in msg:
                             raw_sender = OWNER_NAME
                         elif "给您发送了一个" in msg:
                             raw_sender = contact_name
-
                     username = OWNER_NAME if raw_sender == OWNER_NAME else contact_name
                     nickname = raw_sender
-
-                    try:
-                        if date_ != '1900-01-01' and time_ != '00:00:00':
-                            ts_str = f"{date_} {time_}"
-                            ts = int(datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").timestamp())
-                            m_hash = compute_msg_hash(username, ts, msg)
-
-                            cursor.execute(
-                                "INSERT OR IGNORE INTO other_raw_chats "
-                                "(source_file, username, nickname, create_time, content, platform, subfolder, msg_hash) "
-                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                (filepath, username, nickname, ts, msg, "qq_txt", qqid, m_hash)
-                            )
-                            total_msgs += 1
-                    except Exception as e:
-                        logging.error(f"Error inserting message from {filename} at line {i}: {e}")
-
+                    if date_ != '1900-01-01' and time_ != '00:00:00':
+                        ts_str = f"{date_} {time_}"
+                        ts = int(datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").timestamp())
+                        m_hash = compute_msg_hash(username, ts, msg)
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO group1_qq_txt_raw_chats "
+                            "(source_file, username, nickname, create_time, content, platform, subfolder, msg_hash) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (filepath, username, nickname, ts, msg, "qq_txt", qqid, m_hash)
+                        )
+                        total_msgs += 1
             if i >= len(lines):
                 break
 
