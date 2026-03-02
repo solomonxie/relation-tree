@@ -82,25 +82,22 @@ def parse_file(filepath, cursor):
                 end_idx = i - 2 if time_match else i - 1
                 msg = clean_msg('\n'.join(lines[msg_start:end_idx+1]))
                 last_content_end_idx = end_idx
-                if msg:
-                    if "窗口抖动" in msg:
-                        if "您发送了一个" in msg:
-                            raw_sender = OWNER_NAME
-                        elif "给您发送了一个" in msg:
-                            raw_sender = contact_name
-                    username = OWNER_NAME if raw_sender == OWNER_NAME else contact_name
-                    nickname = raw_sender
-                    if date_ != '1900-01-01' and time_ != '00:00:00':
-                        ts_str = f"{date_} {time_}"
-                        ts = int(datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").timestamp())
-                        m_hash = compute_msg_hash(username, ts, msg)
-                        cursor.execute(
-                            "INSERT OR IGNORE INTO group1_qq_txt_raw_chats "
-                            "(source_file, username, nickname, create_time, content, platform, subfolder, msg_hash) "
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            (filepath, username, nickname, ts, msg, "qq_txt", qqid, m_hash)
-                        )
-                        total_msgs += 1
+                if not msg:
+                    continue
+                if date_ == '1900-01-01' or time_ == '00:00:00':
+                    continue
+                username = OWNER_NAME if raw_sender == OWNER_NAME else contact_name
+                nickname = raw_sender
+                ts_str = f"{date_} {time_}"
+                ts = int(datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").timestamp())
+                m_hash = compute_msg_hash(username, ts, msg)
+                cursor.execute(
+                    "INSERT OR IGNORE INTO group1_qq_txt_raw_chats "
+                    "(source_file, username, nickname, create_time, content, platform, subfolder, msg_hash) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (filepath, username, nickname, ts, msg, "qq_txt", qqid, m_hash)
+                )
+                total_msgs += 1
             if i >= len(lines):
                 break
 
