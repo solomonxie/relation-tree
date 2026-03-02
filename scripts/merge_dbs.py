@@ -57,8 +57,8 @@ def merge_dbs():
                     # Skip the 'id' column to let the main DB autoincrement it
                     main_cursor.execute(f"""
                         INSERT OR IGNORE INTO {table} 
-                        (source_file, username, create_time, content, platform, subfolder, msg_hash)
-                        SELECT source_file, username, create_time, content, platform, subfolder, msg_hash
+                        (source_file, username, nickname, create_time, content, platform, subfolder, msg_hash)
+                        SELECT source_file, username, nickname, create_time, content, platform, subfolder, msg_hash
                         FROM raw_db.{table}
                     """)
                 elif table == "wechat_raw_contacts":

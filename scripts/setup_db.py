@@ -35,6 +35,7 @@ def setup_db(db_path=DB_PATH):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_file TEXT,
         username TEXT,
+        nickname TEXT,
         create_time INTEGER,
         content TEXT,
         platform TEXT,
