@@ -1,8 +1,8 @@
 """
-Group 2: MHTML (QQ Chat Archive) Parser
-Source: blobs/qq_mht/*.mht
+Group 3: QQ Chat History Archive Parser
+Source: blobs/qq_mht/QQ_chat_history_archive(2007-2018.5).mht
 Features:
-1. Parses MHTML/HTML QQ chat logs.
+1. Parses the large consolidated QQ chat history archive MHT.
 2. Improved sender and receiver recognition for 1-on-1 AND Group chats.
 3. Detects group context to correctly assign sender/receiver.
 4. Uses global name-to-ID mapping and handles nicknames.
@@ -24,9 +24,10 @@ logging.basicConfig(
 )
 
 # Constants
-OUTPUT_DB = "data/db/raw/group2_mhtml.sqlite"
-SCHEMA_FILE = "data/schema/raw/group2_mhtml.sql"
+OUTPUT_DB = "data/db/raw/group3_qq_mht_archive.sqlite"
+SCHEMA_FILE = "data/schema/raw/group3_qq_mht_archive.sql"
 PARTNERS_MAP_FILE = "data/partners_map.json"
+SOURCE_FILE = "blobs/QQ_chat_history_archive(2007-2018.5).mht"
 OWNER_NAME = '几何体'
 OWNER_ID = 610784125
 
@@ -110,18 +111,11 @@ def load_global_mappings():
 
 
 def parse_file(filepath, cursor, seen_msgs):
-    logging.info(f"Processing {filepath}")
-    filename = os.path.basename(filepath)
+    logging.info(f"Processing archive: {filepath}")
     
-    f_name, f_id = (filename.replace('.mht', ''), None)
-    match = re.search(r'^(.*?)\((.*?)\)', f_name)
-    if match:
-        f_name = match.group(1).strip()
-        f_id = extract_qq_id(match.group(2).strip())
-    
-    current_context_id = f_id or NAME_TO_ID.get(f_name)
-    current_context_name = ID_TO_NAME.get(current_context_id) if current_context_id else f_name
-    is_group_context = current_context_id in GROUPS or current_context_name in GROUPS or 'group' in filename.lower()
+    current_context_id = None
+    current_context_name = "Unknown"
+    is_group_context = False
 
     with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
         content = f.read()
@@ -172,12 +166,10 @@ def parse_file(filepath, cursor, seen_msgs):
                 s_name, s_id = OWNER_NAME, OWNER_ID
                 r_name, r_id = current_context_name, current_context_id
             elif is_group_context:
-                # In group, the nickname is the actual sender, group is the receiver
                 s_name = nickname
                 s_id = extract_qq_id(nickname) or NAME_TO_ID.get(nickname)
                 r_name, r_id = current_context_name, current_context_id
             else:
-                # 1-on-1, contact speaking, owner receiving
                 s_name, s_id = current_context_name, current_context_id
                 if not s_id: s_id = extract_qq_id(nickname)
                 r_name, r_id = OWNER_NAME, OWNER_ID
@@ -191,7 +183,7 @@ def parse_file(filepath, cursor, seen_msgs):
             seen_msgs.add(msg_key)
                 
             cursor.execute(
-                "INSERT INTO group2_raw_mhtml "
+                "INSERT INTO group3_raw_qq_mht_archive "
                 "(source_file, sender_name, sender_id, receiver_name, receiver_id, nicknames, create_time, content) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (filepath, s_name, s_id, r_name, r_id, nickname, ts, clean_content)
@@ -203,26 +195,22 @@ def parse_file(filepath, cursor, seen_msgs):
 
 def main():
     load_global_mappings()
-    files = [sys.argv[1]] if len(sys.argv) > 1 else glob("blobs/qq_mht/*.mht")
-    if len(sys.argv) == 1:
-        # Exclude the large consolidated archive which is now Group 3
-        files = [f for f in files if "QQ_chat_history_archive" not in f]
-    if not files: return
+    if not os.path.exists(SOURCE_FILE):
+        logging.error(f"Source file not found: {SOURCE_FILE}")
+        return
+        
     conn = init_db()
     cursor = conn.cursor()
     seen_msgs = set()
-    total_extracted = 0
-    for filepath in sorted(files):
-        try:
-            count = parse_file(filepath, cursor, seen_msgs)
-            total_extracted += count
-            logging.info(f"Extracted {count} unique messages from {os.path.basename(filepath)}")
-            if total_extracted % 10000 == 0: conn.commit()
-        except Exception as e:
-            logging.error(f"Failed to process {filepath}: {e}")
-    conn.commit()
-    conn.close()
-    logging.info(f"Processing complete. Total unique messages: {total_extracted}")
+    
+    try:
+        count = parse_file(SOURCE_FILE, cursor, seen_msgs)
+        conn.commit()
+        logging.info(f"Processing complete. Total unique messages from archive: {count}")
+    except Exception as e:
+        logging.error(f"Failed to process archive: {e}")
+    finally:
+        conn.close()
 
 if __name__ == '__main__':
     main()

@@ -28,11 +28,11 @@ SELECT COUNT(*) FROM group1_raw_html;
 
 
 ## Group 2:
-**Source:** `blobs/qq_mht/*.mht`
+**Source:** `blobs/qq_mht/*.mht` (excluding `QQ_chat_history_archive(2007-2018.5).mht`)
 **Script:** `scripts/parse_group2_mhtml.py`
 
 **Description:**
-Single-file web archives containing QQ chat logs.
+Single-file web archives containing QQ chat logs for individual contacts.
 
 **Result:**
 - Inserted xx message records into `group2_mhtml.sqlite` (Table: `group2_raw_mhtml`)
@@ -45,19 +45,19 @@ SELECT COUNT(*) FROM group2_raw_mhtml;
 
 
 ## Group 3:
-**Source:** `'blobs/PDF_CHATS/*.pdf'`
-**Script:** `scripts/parse_group3_pdf.py`
+**Source:** `blobs/qq_mht/QQ_chat_history_archive(2007-2018.5).mht`
+**Script:** `scripts/parse_group3_qq_mht_archive.py`
 
 **Description:**
-Chat histories exported as PDF files.
+A large consolidated QQ chat history archive file containing multiple contacts and groups.
 
 **Result:**
-- Inserted xx message records into `group3_pdf.sqlite` (Table: `group3_raw_pdf`)
+- Inserted xx message records into `group3_qq_mht_archive.sqlite` (Table: `group3_raw_qq_mht_archive`)
 
 **Verification Strategy:**
 ```sql
--- Check total messages from PDF sources
-SELECT COUNT(*) FROM group3_raw_pdf;
+-- Count total unique messages from archive
+SELECT COUNT(*) FROM group3_raw_qq_mht_archive;
 ```
 
 
