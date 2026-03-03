@@ -13,6 +13,7 @@ Features:
 5. Media path: data/media/wechat_media/<contact folder hash>/<fileID>.<ext>
 6. Converts .video_thum to .jpg (they are JPEG files).
 7. Converts various .pic* and .dftemp formats to .jpg or .png based on file content.
+8. Extracts nicknames and remarks from WCDB_Contact.sqlite blobs.
 """
 
 import hashlib
@@ -204,6 +205,31 @@ def get_file_path(backup_dir, manifest_db, relative_path):
     return None
 
 
+def clean_blob(blob_data):
+    """Extract human readable strings from WeChat BLOBs."""
+    if not blob_data or not isinstance(blob_data, bytes):
+        return None
+    try:
+        # Extract sequences of printable characters
+        # WeChat often uses protobuf or similar, but names are usually plain strings
+        # We look for sequences of at least 2 printable characters
+        matches = re.findall(b'[\x20-\x7E\x80-\xFF]{2,}', blob_data)
+        if not matches:
+            return None
+        # Join and clean up
+        texts = []
+        for m in matches:
+            try:
+                t = m.decode('utf-8', errors='ignore').strip()
+                if len(t) > 1 and not all(c.isdigit() or c in '.-_ ' for c in t):
+                    texts.append(t)
+            except:
+                continue
+        return " / ".join(texts) if texts else None
+    except:
+        return None
+
+
 def verify_insertion(out_conn, table, source, expected_min=1):
     """Verify that records were inserted for a specific source."""
     cursor = out_conn.cursor()
@@ -268,14 +294,25 @@ def parse_ios_backup(backup_dir, out_conn):
             conn = sqlite3.connect(contact_db_path)
             cursor = conn.cursor()
             try:
-                cursor.execute("SELECT userName, type FROM Friend")
+                # We check for the table and its columns
+                cursor.execute("SELECT userName, type, dbContactLocal, dbContactRemark FROM Friend")
                 rows = cursor.fetchall()
                 for row in rows:
+                    uname = row[0]
+                    utype = row[1]
+                    unick = clean_blob(row[2])
+                    uremark = clean_blob(row[3])
                     out_cursor.execute(
                         "INSERT OR IGNORE INTO group4_raw_contacts "
-                        "(username, type) VALUES (?, ?)",
-                        row,
+                        "(username, type, nickname, remark) VALUES (?, ?, ?, ?)",
+                        (uname, utype, unick, uremark),
                     )
+                    # Update if already exists but has no names
+                    if unick or uremark:
+                        out_cursor.execute(
+                            "UPDATE group4_raw_contacts SET nickname = ?, remark = ? "
+                            "WHERE username = ?", (unick, uremark, uname),
+                        )
                 logging.info(f"Processed {len(rows)} contacts.")
             except Exception as e:
                 logging.error(f"Error parsing contacts: {e}")
@@ -296,7 +333,7 @@ def parse_ios_backup(backup_dir, out_conn):
                 for row in cursor.fetchall():
                     out_cursor.execute(
                         "UPDATE group4_raw_contacts SET nickname = ? "
-                        "WHERE username = ?", (row[1], row[0]),
+                        "WHERE username = ? AND nickname IS NULL", (row[1], row[0]),
                     )
                     if out_cursor.rowcount == 0:
                         out_cursor.execute(

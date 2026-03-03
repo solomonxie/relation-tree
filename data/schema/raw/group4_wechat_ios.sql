@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS group4_raw_contacts (
     username TEXT PRIMARY KEY,
     nickname TEXT,
+    remark TEXT,
     type INTEGER
 );
 
