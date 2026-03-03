@@ -62,70 +62,19 @@ SELECT COUNT(*) FROM group3_raw_qq_mht_archive;
 
 
 ## Group 4:
-**Source:** `'blobs/QQ/*.bak'`
-**Script:** `scripts/parse_group4_qq_bak.py`
-
-**Description:**
-Binary backup files from QQ.
-
-**Result:**
-- Inserted xx message records into `group4_qq_bak.sqlite` (Table: `group4_raw_qq_bak`)
-
-**Verification Strategy:**
-```sql
--- Check for successfully extracted strings
-SELECT COUNT(*) FROM group4_raw_qq_bak;
-```
-
-
-## Group 5:
-**Source:** `'blobs/Tencent_TT/*.bak'`
-**Script:** `scripts/parse_group5_tt_bak.py`
-
-**Description:**
-Legacy binary backups from Tencent TT browser.
-
-**Result:**
-- Inserted xx message records into `group5_tt_bak.sqlite` (Table: `group5_raw_tt_bak`)
-
-**Verification Strategy:**
-```sql
--- Verify record count for TT browser backups
-SELECT COUNT(*) FROM group5_raw_tt_bak;
-```
-
-
-## Group 6:
-**Source:** `'blobs/TXT_CHATS/*.txt'`
-**Script:** `scripts/parse_group6_txt.py`
-
-**Description:**
-Plain text chat logs.
-
-**Result:**
-- Inserted xx message records into `group6_txt.sqlite` (Table: `group6_raw_txt`)
-
-**Verification Strategy:**
-```sql
--- Check records
-SELECT COUNT(*) FROM group6_raw_txt;
-```
-
-
-## Group 7:
 **Source:** `blobs/Wechat/*`
-**Script:** `scripts/parse_group7_wechat_ios.py`
+**Script:** `scripts/parse_group4_wechat_ios.py`
 
 **Description:**
 Raw WeChat iOS data folders.
 
 **Result:**
-- Inserted xx message records into `group7_wechat_ios.sqlite` (Table: `group7_raw_messages`)
+- Inserted xx message records into `group4_wechat_ios.sqlite` (Table: `group4_raw_messages`)
 
 **Verification Strategy:**
 ```sql
 -- Verify total message count from iOS backup
-SELECT COUNT(*) FROM group7_raw_messages;
+SELECT COUNT(*) FROM group4_raw_messages;
 ```
 
 
