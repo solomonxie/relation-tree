@@ -1,11 +1,12 @@
 """
-WeChat Manual Text Export Parser
+Group 8: WeChat Manual Text Export Parser
 -------------------------------
-Target: blobs/Wechat2/导出/
-Analysis: Text-based chat logs exported directly from the WeChat app or
-via 3rd party tools. These files follow standard formats but often have
-different encodings (UTF-8, GBK, UTF-16).
-Destination: wechat_raw_messages, wechat_raw_contacts
+Target: blobs/Wechat_txt/
+Analysis: Text-based chat logs with Beijing time (UTC+8).
+Features:
+1. Parses date, nickname, status, type, content.
+2. Uses local schema file for database initialization.
+3. Deduplication based on message hash (normalized to UTC).
 """
 
 import hashlib
@@ -13,8 +14,7 @@ import logging
 import os
 import re
 import sqlite3
-from datetime import datetime
-from setup_db import setup_db
+from datetime import datetime, timedelta, timezone
 
 # Setup logging
 logging.basicConfig(
@@ -23,26 +23,27 @@ logging.basicConfig(
 
 # Paths
 OUTPUT_DB = "data/db/raw/group8_wechat_txt.sqlite"
-EXPORT_DIR = "blobs/Wechat2/导出"
+SCHEMA_FILE = "data/schema/raw/group8_wechat_txt.sql"
+EXPORT_DIR = "blobs/Wechat_txt"
+
+
+def init_db():
+    """Initialize DB using the local schema file."""
+    if os.path.exists(OUTPUT_DB):
+        os.remove(OUTPUT_DB)
+    os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
+    with open(SCHEMA_FILE, 'r') as f:
+        schema_sql = f.read()
+    conn = sqlite3.connect(OUTPUT_DB)
+    conn.executescript(schema_sql)
+    conn.commit()
+    return conn
 
 
 def compute_msg_hash(username, create_time, content):
-    """Computes a unique hash for a message to prevent global duplicates."""
+    """Computes a unique hash for a message."""
     base_str = f"{username}|{create_time}|{content}"
     return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
-
-
-def verify_insertion(out_conn, table, source, expected_min=1):
-    """Verify that records were inserted for a specific source."""
-    cursor = out_conn.cursor()
-    query = f"SELECT COUNT(*) FROM {table} WHERE source = ?"
-    cursor.execute(query, (source,))
-    count = cursor.fetchone()[0]
-    logging.info(
-        f"Verification: {table} for {source} has {count} records "
-        f"(expected ~{expected_min})."
-    )
-    return count
 
 
 def parse_exported_text(export_dir, out_conn):
@@ -51,9 +52,9 @@ def parse_exported_text(export_dir, out_conn):
     if not os.path.exists(export_dir):
         return
 
-    source_name = f"exported_text_{os.path.basename(export_dir)}"
     out_cursor = out_conn.cursor()
     total_msgs = 0
+    beijing_tz = timezone(timedelta(hours=8))
 
     for filename in os.listdir(export_dir):
         if not filename.endswith(".txt"):
@@ -63,89 +64,60 @@ def parse_exported_text(export_dir, out_conn):
         file_path = os.path.join(export_dir, filename)
 
         try:
-            encodings = ["utf-8", "gbk", "utf-16"]
             content = None
-            for enc in encodings:
+            for enc in ["utf-8", "gbk", "utf-16"]:
                 try:
                     with open(file_path, "r", encoding=enc) as f:
                         content = f.read()
                     break
-                except Exception:
-                    continue
+                except: continue
 
             if not content:
-                logging.error(f"Could not read {filename} with any encoding.")
+                logging.error(f"Could not read {filename}")
                 continue
 
-            lines = content.split("\n")
+            lines = content.splitlines()
             for line in lines:
-                # Regex for common WeChat export formats
+                # Format: 2018-06-15 11:34        Nickname                  Status                        Type                         Content
                 match = re.match(
-                    r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+(.*?)\s+"
-                    r"(发送|接收)\s+(.*?)\s+(.*)",
+                    r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s+(.*?)\s+(发送|接收|未知类型)\s+(.*?)\s+(.*)",
                     line,
                 )
-                if not match:
-                    # Alternative simplified format
-                    match = re.match(
-                        r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(.*?):\s+(.*)",
-                        line
-                    )
-
                 if match:
-                    groups = match.groups()
-                    if len(groups) == 5:
-                        dt_str, contact, direction, mtype, msg_content = groups
-                        fmt = "%Y-%m-%d %H:%M"
-                    else:
-                        dt_str, contact, msg_content = groups
-                        fmt = "%Y-%m-%d %H:%M:%S"
-
+                    dt_str, contact, direction, mtype, msg_content = match.groups()
                     try:
-                        ts = int(datetime.strptime(dt_str, fmt).timestamp())
-                    except Exception:
-                        continue
+                        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(tzinfo=beijing_tz)
+                        ts = int(dt.timestamp())
+                    except: continue
 
-                    local_id = int(hashlib.md5(line.encode()).hexdigest()[:8], 16)
-                    m_hash = compute_msg_hash(username, ts, msg_content.strip())
+                    msg_content = msg_content.strip()
+                    m_hash = compute_msg_hash(username, ts, msg_content)
 
                     out_cursor.execute(
-                        "INSERT OR IGNORE INTO wechat_raw_messages "
-                        "(username, create_time, content, local_id, source, "
-                        "msg_hash) VALUES (?, ?, ?, ?, ?, ?)",
-                        (username, ts, msg_content.strip(), local_id,
-                         source_name, m_hash),
+                        "INSERT OR IGNORE INTO group8_raw_messages "
+                        "(username, create_time, content, source, "
+                        "msg_hash) VALUES (?, ?, ?, ?, ?)",
+                        (username, ts, msg_content, filename, m_hash),
                     )
                     total_msgs += 1
 
-                    # Log contact/nickname
+                    # Log contact
                     out_cursor.execute(
-                        "UPDATE wechat_raw_contacts SET nickname = ? "
-                        "WHERE username = ?", (contact, username),
+                        "INSERT OR IGNORE INTO group8_raw_contacts "
+                        "(username, nickname) VALUES (?, ?)",
+                        (username, contact),
                     )
-                    if out_cursor.rowcount == 0:
-                        out_cursor.execute(
-                            "INSERT OR IGNORE INTO wechat_raw_contacts "
-                            "(username, nickname) VALUES (?, ?)",
-                            (username, contact),
-                        )
         except Exception as e:
             logging.error(f"Error parsing {filename}: {e}")
 
-    if total_msgs > 0:
-        verify_insertion(
-            out_conn, "wechat_raw_messages", source_name,
-            expected_min=total_msgs
-        )
+    logging.info(f"Inserted {total_msgs} messages into {OUTPUT_DB}")
 
 
 def main():
     if not os.path.exists(EXPORT_DIR):
-        logging.info(f"Export directory not found: {EXPORT_DIR}")
         return
 
-    setup_db(OUTPUT_DB)
-    conn = sqlite3.connect(OUTPUT_DB)
+    conn = init_db()
     parse_exported_text(EXPORT_DIR, conn)
     conn.commit()
     conn.close()

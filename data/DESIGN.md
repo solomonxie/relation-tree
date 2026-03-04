@@ -95,55 +95,55 @@ SELECT COUNT(*) FROM group8_raw_wechat_txt;
 ```
 
 
-## Group 9:
-**Source:** `blobs/wechat_20260627/*`
-**Script:** `scripts/parse_group9_wechat_forensic.py`
+## Group 5:
+**Source:** `blobs/Wechat/*.sqlite`
+**Script:** `scripts/parse_group5_wechat_forensic.py`
 
 **Description:**
-Recent forensic/backup WeChat export.
+Standard WeChat WCDB SQLite databases (MM.sqlite, MM2.sqlite, MM3.sqlite).
 
 **Result:**
-- Inserted xx message records into `group9_wechat_forensic.sqlite` (Table: `group9_raw_forensic`)
+- Inserted xx message records into `group5_wechat_forensic.sqlite` (Table: `group5_raw_forensic`)
 
 **Verification Strategy:**
 ```sql
 -- Count records
-SELECT COUNT(*) FROM group9_raw_forensic;
+SELECT COUNT(*) FROM group5_raw_messages;
 ```
 
 
-## Group 10:
+## Group 6:
 **Sources:**
 - `'blobs/Wechat3/MicroMsg[...]/'` (Legacy 2013-2014)
-**Script:** `scripts/parse_group10_wechat_archive.py`
+**Script:** `scripts/parse_group6_wechat_archive.py`
 
 **Description:**
 Legacy WeChat folders with `EnMicroMsg.db`.
 
 **Result:**
-- Inserted xx message records into `group10_wechat_archive.sqlite` (Table: `group10_raw_archive`)
+- Inserted xx message records into `group6_wechat_archive.sqlite` (Table: `group6_raw_archive`)
 
 **Verification Strategy:**
 ```sql
 -- Verify records
-SELECT COUNT(*) FROM group10_raw_archive;
+SELECT COUNT(*) FROM group6_raw_archive;
 ```
 
 
-## Group 11:
+## Group 7:
 **Source:** `'blobs/Wechat3/WechatBackup[2016-03-11]'`
-**Script:** `scripts/parse_group11_wechat_ios_2016.py`
+**Script:** `scripts/parse_group7_wechat_ios_2016.py`
 
 **Description:**
 iOS backup of WeChat from 2016.
 
 **Result:**
-- Inserted xx message records into `group11_wechat_ios_2016.sqlite` (Table: `group11_raw_ios_2016`)
+- Inserted xx message records into `group7_wechat_ios_2016.sqlite` (Table: `group7_raw_ios_2016`)
 
 **Verification Strategy:**
 ```sql
 -- Total count for 2016 backup
-SELECT COUNT(*) FROM group11_raw_ios_2016;
+SELECT COUNT(*) FROM group7_raw_ios_2016;
 ```
 
 
