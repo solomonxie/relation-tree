@@ -5,12 +5,13 @@ Target: blobs/Wechat/ (MM*.sqlite + images/ + voice/)
 Analysis: Standard WeChat (WCDB) SQLite databases and media folders.
 Features:
 1. Extract contact info only from the target blobs folder (blobs/Wechat).
-2. Maps hashed chat table names and media filenames back to real contact IDs using internal maps.
-3. Parses messages from 'Chat_[hash]' tables in MM*.sqlite.
-4. Converts XML-formatted messages to descriptive plain text (Title + Description).
-5. Links media files to contacts using filename hash fragments.
-6. Converts AMR to MP3 and identifies image formats.
-7. Independent: No references to other groups or external SQLite databases.
+2. Harvests usernames, nicknames, and types from XML message content across ALL tables.
+3. Maps hashed chat table names and media filenames back to real contact IDs.
+4. Parses messages from 'Chat_[hash]' tables in MM*.sqlite.
+5. Converts XML-formatted messages to descriptive plain text (Title + Description).
+6. Links media files to contacts using filename hash fragments.
+7. Converts Silk/AMR to MP3 and identifies image formats.
+8. Independent: No references to other groups or external SQLite databases.
 """
 
 import hashlib
@@ -21,6 +22,13 @@ import shutil
 import sqlite3
 import subprocess
 import xml.etree.ElementTree as ET
+
+# Try to import pilk for Silk decoding
+try:
+    import pilk
+    HAS_PILK = True
+except ImportError:
+    HAS_PILK = False
 
 # Setup logging
 logging.basicConfig(
@@ -45,56 +53,6 @@ def init_db():
     conn.executescript(schema_sql)
     conn.commit()
     return conn
-
-
-def get_internal_contact_mapping(wechat_dir, out_conn):
-    """
-    Extracts contact mapping from internal SQLite files in the target folder.
-    Returns:
-        id_to_nick: {id: nickname}
-        hash_to_id: {md5(id): id}
-        prefix_to_id: {md5(id)[:8]: id}
-    """
-    id_to_nick = {}
-    hash_to_id = {}
-    prefix_to_id = {}
-
-    out_cursor = out_conn.cursor()
-
-    for filename in os.listdir(wechat_dir):
-        if not (filename.endswith(".sqlite") or filename.endswith(".db")):
-            continue
-        
-        sqlite_path = os.path.join(wechat_dir, filename)
-        try:
-            conn = sqlite3.connect(sqlite_path)
-            cursor = conn.cursor()
-            
-            # Check if 'Friend' table exists
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Friend'")
-            if cursor.fetchone():
-                cursor.execute("SELECT UsrName, NickName FROM Friend")
-                for row in cursor.fetchall():
-                    uname, unick = row
-                    if not uname or len(uname) < 2:
-                        continue
-                    
-                    id_to_nick[uname] = unick
-                    uhash = hashlib.md5(uname.encode("utf-8")).hexdigest()
-                    hash_to_id[uhash] = uname
-                    prefix_to_id[uhash[:8]] = uname
-
-                    # Pre-populate output DB contacts
-                    out_cursor.execute(
-                        "INSERT OR IGNORE INTO group5_raw_contacts (username, nickname) VALUES (?, ?)",
-                        (uname, unick),
-                    )
-            
-            conn.close()
-        except Exception as e:
-            logging.debug(f"Info: Could not load contacts from {sqlite_path}: {e}")
-
-    return id_to_nick, hash_to_id, prefix_to_id
 
 
 def clean_xml_content(content):
@@ -162,45 +120,237 @@ def clean_xml_content(content):
         return " | ".join(parts) if parts else content
 
 
-try:
-    import pilk
-    HAS_PILK = True
-except ImportError:
-    HAS_PILK = False
+def get_contact_type(username):
+    """
+    Heuristics to determine contact type:
+    1: Individual, 2: Chatroom, 3: Official Account, 4: System, 0: Unknown
+    """
+    if not username:
+        return 0
+    if username.endswith("@chatroom"):
+        return 2
+    if username.startswith("gh_"):
+        return 3
+    system_ids = {
+        "weixin",
+        "filehelper",
+        "newsapp",
+        "fmessage",
+        "tmessage",
+        "qqmail",
+        "qqsync",
+        "floatbottle",
+        "medianote",
+        "qmessage",
+        "qqfriend",
+        "masssendapp",
+        "lbsapp",
+        "shakeapp",
+    }
+    if username in system_ids:
+        return 4
+    if username.endswith("@qqim") or username.startswith("wxid_") or len(username) >= 2:
+        return 1
+    return 0
 
-# Setup logging
-...
+
+def harvest_contacts(wechat_dir, out_conn):
+    """
+    Globally harvests contact mapping from ALL messages and table names.
+    """
+    # {username: {nickname: ..., remark: ..., type: ...}}
+    contacts = {}
+    hash_to_id = {}
+    prefix_to_id = {}
+    owner_hash = "legacy_unknown"
+
+    out_cursor = out_conn.cursor()
+
+    for filename in os.listdir(wechat_dir):
+        if not (filename.endswith(".sqlite") or filename.endswith(".db")):
+            continue
+
+        sqlite_path = os.path.join(wechat_dir, filename)
+        try:
+            conn = sqlite3.connect(sqlite_path)
+            cursor = conn.cursor()
+
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND (name LIKE 'Chat_%' OR name LIKE 'Hello_%') AND name NOT LIKE 'ChatExt%'"
+            )
+            tables = [r[0] for r in cursor.fetchall()]
+
+            if not tables:
+                conn.close()
+                continue
+
+            # First hash we find in a table name is likely the owner
+            if owner_hash == "legacy_unknown":
+                for table in tables:
+                    if table.startswith("Chat_") and len(table) == 37:
+                        owner_hash = table.replace("Chat_", "")
+                        break
+
+            for table in tables:
+                cursor.execute(f"PRAGMA table_info({table})")
+                cols = [c[1].lower() for c in cursor.fetchall()]
+                m_col = "message" if "message" in cols else "content"
+
+                cursor.execute(
+                    f"SELECT {m_col} FROM {table} WHERE {m_col} LIKE '%username%' OR {m_col} LIKE '%nickname%' LIMIT 500"
+                )
+                for (msg,) in cursor.fetchall():
+                    if not msg:
+                        continue
+                    # XML patterns
+                    for tag in ["fromusername", "username"]:
+                        # Match only until " or ' or whitespace or > or & (to avoid URL params)
+                        uname_m = re.search(f'{tag}=["\']?([^"\'\\s<>&]+)["\']?', msg)
+                        if not uname_m:
+                            uname_m = re.search(
+                                f"<{tag}><!\\[CDATA\\[([^&<>\\]]+)\\]\\]></{tag}>", msg
+                            )
+
+                        if uname_m:
+                            uname = uname_m.group(1)
+                            if len(uname) < 2 or len(uname) > 64: # Sanity check
+                                continue
+
+                            if uname not in contacts:
+                                contacts[uname] = {
+                                    "nickname": None,
+                                    "remark": None,
+                                    "type": get_contact_type(uname),
+                                }
+
+                            # Extract nickname
+                            for nick_tag in ["fromnickname", "nickname"]:
+                                nick_m = re.search(
+                                    f'{nick_tag}=["\']?([^"\'\\s<>]+)["\']?', msg
+                                )
+                                if not nick_m:
+                                    nick_m = re.search(
+                                        f"<{nick_tag}><!\\[CDATA\\[(.*?)\\]\\]></{nick_tag}>",
+                                        msg,
+                                    )
+                                if nick_m:
+                                    contacts[uname]["nickname"] = nick_m.group(1)
+                                    break
+
+                            # Extract remark if available
+                            rem_m = re.search(r'alias=["\']?([^"\'\s<>]+)["\']?', msg)
+                            if rem_m:
+                                contacts[uname]["remark"] = rem_m.group(1)
+
+            conn.close()
+        except Exception as e:
+            logging.debug(f"Error harvesting from {sqlite_path}: {e}")
+
+    # Map Chat_ tables specifically
+    for filename in os.listdir(wechat_dir):
+        if not (filename.endswith(".sqlite") or filename.endswith(".db")):
+            continue
+        try:
+            conn = sqlite3.connect(os.path.join(wechat_dir, filename))
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Chat_%' AND name NOT LIKE 'ChatExt%'"
+            )
+            for (table,) in cursor.fetchall():
+                table_hash = table.replace("Chat_", "")
+                # If we don't have it in contacts yet, try to find it via its own messages
+                if table_hash not in hash_to_id:
+                    cursor.execute(f"PRAGMA table_info({table})")
+                    cols = [c[1].lower() for c in cursor.fetchall()]
+                    m_col = "message" if "message" in cols else "content"
+                    cursor.execute(
+                        f"SELECT {m_col} FROM {table} WHERE {m_col} LIKE '%username%' LIMIT 10"
+                    )
+                    for (msg,) in cursor.fetchall():
+                        if not msg:
+                            continue
+                        m = re.search(r'fromusername=["\']?([^"\'\s<>]+)["\']?', msg)
+                        if m:
+                            uname = m.group(1)
+                            if (
+                                hashlib.md5(uname.encode("utf-8")).hexdigest()
+                                == table_hash
+                            ):
+                                hash_to_id[table_hash] = uname
+                                prefix_to_id[table_hash[:8]] = uname
+                                if uname not in contacts:
+                                    contacts[uname] = {
+                                        "nickname": None,
+                                        "remark": None,
+                                        "type": get_contact_type(uname),
+                                    }
+                                break
+            conn.close()
+        except Exception:
+            continue
+
+    # Log harvested contacts
+    for uname, info in contacts.items():
+        out_cursor.execute(
+            "INSERT OR IGNORE INTO group5_raw_contacts (username, nickname, remark, type) VALUES (?, ?, ?, ?)",
+            (uname, info["nickname"], info["remark"], info["type"]),
+        )
+        uhash = hashlib.md5(uname.encode("utf-8")).hexdigest()
+        hash_to_id[uhash] = uname
+        prefix_to_id[uhash[:8]] = uname
+
+    return contacts, hash_to_id, prefix_to_id, owner_hash
+
+
 def convert_audio_to_mp3(src_path, dest_path):
     """Converts Silk or AMR to MP3."""
-    if not os.path.exists(src_path): return False
-    
+    if not os.path.exists(src_path):
+        return False
+
     with open(src_path, "rb") as f:
         header = f.read(10)
-    
-    # 1. Handle Silk
-    if HAS_PILK and (header.startswith(b"#!SILK_V3") or header.startswith(b"\x02#!SILK_V3")):
+
+    if HAS_PILK and (
+        header.startswith(b"#!SILK_V3") or header.startswith(b"\x02#!SILK_V3")
+    ):
         actual_silk_path = src_path
         temp_silk = None
         if header.startswith(b"\x02#!SILK_V3"):
             temp_silk = src_path + ".tmp.silk"
             with open(src_path, "rb") as f:
                 f.seek(1)
-                with open(temp_silk, "wb") as tf: tf.write(f.read())
+                with open(temp_silk, "wb") as tf:
+                    tf.write(f.read())
             actual_silk_path = temp_silk
-        
+
         pcm_path = src_path + ".pcm"
         try:
             pilk.decode(actual_silk_path, pcm_path)
-            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", pcm_path, dest_path]
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-f",
+                "s16le",
+                "-ar",
+                "24000",
+                "-ac",
+                "1",
+                "-i",
+                pcm_path,
+                dest_path,
+            ]
             subprocess.run(cmd, check=True)
             return True
         except Exception as e:
             logging.error(f"Error converting silk {src_path}: {e}")
         finally:
-            if os.path.exists(pcm_path): os.remove(pcm_path)
-            if temp_silk and os.path.exists(temp_silk): os.remove(temp_silk)
-    
-    # 2. Handle AMR or others using ffmpeg directly
+            if os.path.exists(pcm_path):
+                os.remove(pcm_path)
+            if temp_silk and os.path.exists(temp_silk):
+                os.remove(temp_silk)
+
     try:
         cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", src_path, dest_path]
         subprocess.run(cmd, check=True)
@@ -217,12 +367,18 @@ def identify_format_and_fix_ext(file_path):
         with open(file_path, "rb") as f:
             header = f.read(16)
         ext = ""
-        if header.startswith(b"\xff\xd8\xff"): ext = ".jpg"
-        elif header.startswith(b"\x89PNG"): ext = ".png"
-        elif header.startswith(b"GIF8"): ext = ".gif"
-        elif b"ftyp" in header[4:12]: ext = ".mp4"
-        elif header.startswith(b"#!AMR"): ext = ".amr"
-        elif header.startswith(b"#!SILK_V3") or header.startswith(b"\x02#!SILK_V3"): ext = ".silk"
+        if header.startswith(b"\xff\xd8\xff"):
+            ext = ".jpg"
+        elif header.startswith(b"\x89PNG"):
+            ext = ".png"
+        elif header.startswith(b"GIF8"):
+            ext = ".gif"
+        elif b"ftyp" in header[4:12]:
+            ext = ".mp4"
+        elif header.startswith(b"#!AMR"):
+            ext = ".amr"
+        elif header.startswith(b"#!SILK_V3") or header.startswith(b"\x02#!SILK_V3"):
+            ext = ".silk"
 
         if ext and not file_path.lower().endswith(ext):
             new_path = file_path + ext
@@ -245,7 +401,7 @@ def compute_msg_hash(username, create_time, content):
     return hashlib.md5(base_str.encode("utf-8", errors="replace")).hexdigest()
 
 
-def parse_wcdb_sqlite(sqlite_path, out_conn, id_to_nick, hash_to_id):
+def parse_wcdb_sqlite(sqlite_path, out_conn, contacts, hash_to_id):
     """Parses standard WeChat message tables."""
     logging.info(f"Parsing WCDB messages: {sqlite_path}")
     source_name = f"sqlite_{os.path.basename(sqlite_path)}"
@@ -264,12 +420,13 @@ def parse_wcdb_sqlite(sqlite_path, out_conn, id_to_nick, hash_to_id):
         for table in chat_tables:
             uhash = table.replace("Chat_", "")
             username = hash_to_id.get(uhash, uhash)
-            nickname = id_to_nick.get(username, f"Unknown_{username[:8]}")
 
-            out_cursor.execute(
-                "INSERT OR IGNORE INTO group5_raw_contacts (username, nickname) VALUES (?, ?)",
-                (username, nickname),
-            )
+            # Ensure contact exists in DB (even if minimal)
+            if username not in contacts:
+                out_cursor.execute(
+                    "INSERT OR IGNORE INTO group5_raw_contacts (username, nickname, type) VALUES (?, ?, ?)",
+                    (username, None, get_contact_type(username)),
+                )
 
             cursor.execute(f"PRAGMA table_info({table})")
             columns = [c[1].lower() for c in cursor.fetchall()]
@@ -297,7 +454,7 @@ def parse_wcdb_sqlite(sqlite_path, out_conn, id_to_nick, hash_to_id):
         logging.error(f"Error parsing messages from {sqlite_path}: {e}")
 
 
-def parse_media(wechat_dir, out_conn, hash_to_id, prefix_to_id):
+def parse_media(wechat_dir, out_conn, hash_to_id, prefix_to_id, owner_hash):
     """Scans media folders and logs files using fuzzy matching."""
     logging.info("Scanning media folders...")
     out_cursor = out_conn.cursor()
@@ -316,16 +473,19 @@ def parse_media(wechat_dir, out_conn, hash_to_id, prefix_to_id):
                     continue
                 src_path = os.path.join(root, f)
 
-                real_id = "legacy_unknown"
+                real_id = owner_hash
+                found_match = False
                 for h, uid in hash_to_id.items():
                     if h in f:
                         real_id = uid
+                        found_match = True
                         break
 
-                if real_id == "legacy_unknown":
+                if not found_match:
                     for p in sorted_prefixes:
                         if p in f:
                             real_id = prefix_to_id[p]
+                            found_match = True
                             break
 
                 dest_dir = os.path.join(MEDIA_ROOT, real_id)
@@ -337,10 +497,15 @@ def parse_media(wechat_dir, out_conn, hash_to_id, prefix_to_id):
                         shutil.copy2(src_path, dest_path)
 
                     final_path = identify_format_and_fix_ext(dest_path)
-                    if final_path.lower().endswith(".amr"):
+                    if final_path.lower().endswith((".amr", ".silk", ".aud")):
                         mp3_path = os.path.splitext(final_path)[0] + ".mp3"
-                        if convert_audio_to_mp3(final_path, mp3_path):
-                            os.remove(final_path)
+                        if not os.path.exists(mp3_path):
+                            if convert_audio_to_mp3(final_path, mp3_path):
+                                os.remove(final_path)
+                                final_path = mp3_path
+                        else:
+                            if os.path.exists(final_path):
+                                os.remove(final_path)
                             final_path = mp3_path
 
                     mtype = "unknown"
@@ -378,15 +543,19 @@ def main():
         return
 
     conn = init_db()
-    id_to_nick, hash_to_id, prefix_to_id = get_internal_contact_mapping(WECHAT_DIR, conn)
-    logging.info(f"Loaded {len(id_to_nick)} internal contacts.")
+    id_to_info, hash_to_id, prefix_to_id, owner_hash = harvest_contacts(WECHAT_DIR, conn)
+    logging.info(
+        f"Harvested {len(id_to_info)} internal contacts. Owner hash: {owner_hash}"
+    )
 
     for f in os.listdir(WECHAT_DIR):
         if f.endswith(".sqlite") or f.endswith(".db"):
             if "MM" in f:
-                parse_wcdb_sqlite(os.path.join(WECHAT_DIR, f), conn, id_to_nick, hash_to_id)
+                parse_wcdb_sqlite(
+                    os.path.join(WECHAT_DIR, f), conn, id_to_info, hash_to_id
+                )
 
-    parse_media(WECHAT_DIR, conn, hash_to_id, prefix_to_id)
+    parse_media(WECHAT_DIR, conn, hash_to_id, prefix_to_id, owner_hash)
 
     conn.commit()
     conn.close()
