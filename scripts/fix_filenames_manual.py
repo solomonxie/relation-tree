@@ -1,4 +1,3 @@
-
 import os
 
 TXT_DIR = "blobs/qq_txt"
@@ -15,6 +14,7 @@ MANUAL_FIX = {
     "sender_id_unknown__sender_name_wiwere零班__receiver_name_几何体.txt": "sender_id_group_wiwere_0__sender_name_wiwere零班__receiver_name_几何体.txt",
 }
 
+
 def main():
     for old, new in MANUAL_FIX.items():
         old_path = os.path.join(TXT_DIR, old)
@@ -22,6 +22,7 @@ def main():
         if os.path.exists(old_path):
             os.rename(old_path, new_path)
             print(f"Manual Rename: {old} -> {new}")
+
 
 if __name__ == "__main__":
     main()

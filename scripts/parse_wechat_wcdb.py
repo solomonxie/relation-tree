@@ -40,7 +40,7 @@ def verify_insertion(out_conn, table, source, expected_min=1):
 def compute_msg_hash(username, create_time, content):
     """Computes a unique hash for a message to prevent global duplicates."""
     base_str = f"{username}|{create_time}|{content}"
-    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+    return hashlib.md5(base_str.encode("utf-8", errors="replace")).hexdigest()
 
 
 def parse_wcdb_sqlite(sqlite_path, out_conn):
@@ -71,8 +71,7 @@ def parse_wcdb_sqlite(sqlite_path, out_conn):
             cursor.execute(f"PRAGMA table_info({table_name})")
             columns = [c[1] for c in cursor.fetchall()]
             u_col = next(
-                (c for c in columns if c.lower() in ["username", "usrname"]),
-                None
+                (c for c in columns if c.lower() in ["username", "usrname"]), None
             )
             n_col = next((c for c in columns if c.lower() in ["nickname"]), None)
             t_col = next((c for c in columns if c.lower() in ["type"]), None)
@@ -98,7 +97,8 @@ def parse_wcdb_sqlite(sqlite_path, out_conn):
                     if unick:
                         out_cursor.execute(
                             "UPDATE wechat_raw_contacts SET nickname = ? "
-                            "WHERE username = ?", (unick, uname),
+                            "WHERE username = ?",
+                            (unick, uname),
                         )
     except Exception as e:
         logging.error(f"Error parsing contacts: {e}")
@@ -116,16 +116,14 @@ def parse_wcdb_sqlite(sqlite_path, out_conn):
             cursor.execute(f"PRAGMA table_info({table})")
             columns = [c[1] for c in cursor.fetchall()]
             m_col = next(
-                (c for c in columns if c.lower() in ["message", "content"]),
-                None
+                (c for c in columns if c.lower() in ["message", "content"]), None
             )
             t_col = next(
-                (c for c in columns if c.lower() in ["createtime", "create_time"]),
-                None
+                (c for c in columns if c.lower() in ["createtime", "create_time"]), None
             )
             l_col = next(
                 (c for c in columns if c.lower() in ["meslocalid", "localid", "id"]),
-                None
+                None,
             )
 
             if m_col and t_col and l_col:
@@ -146,8 +144,7 @@ def parse_wcdb_sqlite(sqlite_path, out_conn):
     conn.close()
     if total_msgs > 0:
         verify_insertion(
-            out_conn, "wechat_raw_messages", source_name,
-            expected_min=total_msgs
+            out_conn, "wechat_raw_messages", source_name, expected_min=total_msgs
         )
 
 

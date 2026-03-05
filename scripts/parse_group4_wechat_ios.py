@@ -24,11 +24,11 @@ import sqlite3
 import sys
 import subprocess
 import re
-from datetime import datetime
 
 # Try to import pilk for Silk decoding
 try:
     import pilk
+
     HAS_PILK = True
 except ImportError:
     HAS_PILK = False
@@ -42,7 +42,7 @@ logging.basicConfig(
 OUTPUT_DB = "data/db/raw/group4_wechat_ios.sqlite"
 SCHEMA_FILE = "data/schema/raw/group4_wechat_ios.sql"
 PARTNERS_MAP_FILE = "data/partners_map.json"
-OWNER_NAME = '几何体'
+OWNER_NAME = "几何体"
 OWNER_ID = 610784125
 MEDIA_ROOT = "data/media/wechat_media"
 IOS_BACKUP_DIR = "blobs/Wechat2/4c29b1307decf4b1224800b65ab52a877104e9d3"
@@ -53,7 +53,7 @@ def init_db():
     if os.path.exists(OUTPUT_DB):
         os.remove(OUTPUT_DB)
     os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
-    with open(SCHEMA_FILE, 'r') as f:
+    with open(SCHEMA_FILE, "r") as f:
         schema_sql = f.read()
     conn = sqlite3.connect(OUTPUT_DB)
     conn.executescript(schema_sql)
@@ -77,10 +77,10 @@ def convert_silk_to_mp3(src_path):
     # Check for silk v3 header (might have 0x02 prefix)
     if not os.path.exists(src_path):
         return src_path
-        
+
     with open(src_path, "rb") as f:
         header = f.read(10)
-    
+
     is_silk = False
     actual_silk_path = src_path
     temp_silk = None
@@ -102,17 +102,26 @@ def convert_silk_to_mp3(src_path):
 
     dest_path = os.path.splitext(src_path)[0] + ".mp3"
     pcm_path = src_path + ".pcm"
-    
+
     try:
         # 1. Decode Silk to PCM
         pilk.decode(actual_silk_path, pcm_path)
-        
+
         # 2. Encode PCM to MP3
         cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "s16le", "-ar", "24000", "-ac", "1",
-            "-i", pcm_path,
-            dest_path
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "s16le",
+            "-ar",
+            "24000",
+            "-ac",
+            "1",
+            "-i",
+            pcm_path,
+            dest_path,
         ]
         subprocess.run(cmd, check=True)
         # Cleanup original silk in destination if converted
@@ -133,7 +142,7 @@ def convert_video_thum_to_jpg(src_path):
     """Renames .video_thum to .jpg as they are usually JPEGs."""
     if not src_path.lower().endswith(".video_thum"):
         return src_path
-    
+
     dest_path = os.path.splitext(src_path)[0] + ".jpg"
     try:
         if os.path.exists(dest_path):
@@ -151,13 +160,13 @@ def convert_image(src_path):
     weird_exts = (".pic", ".pic_hd", ".pic_thum", ".pic_mid", ".pic_cmid", ".dftemp")
     if not src_path.lower().endswith(weird_exts):
         return src_path
-    
+
     if not os.path.exists(src_path):
         return src_path
-        
+
     with open(src_path, "rb") as f:
         header = f.read(4)
-    
+
     ext = ".jpg"
     if header.startswith(b"\x89PNG"):
         ext = ".png"
@@ -165,7 +174,7 @@ def convert_image(src_path):
         ext = ".jpg"
     elif header.startswith(b"GIF8"):
         ext = ".gif"
-        
+
     dest_path = os.path.splitext(src_path)[0] + ext
     try:
         if os.path.exists(dest_path):
@@ -213,20 +222,20 @@ def clean_blob(blob_data):
         # Extract sequences of printable characters
         # WeChat often uses protobuf or similar, but names are usually plain strings
         # We look for sequences of at least 2 printable characters
-        matches = re.findall(b'[\x20-\x7E\x80-\xFF]{2,}', blob_data)
+        matches = re.findall(b"[\x20-\x7e\x80-\xff]{2,}", blob_data)
         if not matches:
             return None
         # Join and clean up
         texts = []
         for m in matches:
             try:
-                t = m.decode('utf-8', errors='ignore').strip()
-                if len(t) > 1 and not all(c.isdigit() or c in '.-_ ' for c in t):
+                t = m.decode("utf-8", errors="ignore").strip()
+                if len(t) > 1 and not all(c.isdigit() or c in ".-_ " for c in t):
                     texts.append(t)
-            except:
+            except Exception:
                 continue
         return " / ".join(texts) if texts else None
-    except:
+    except Exception:
         return None
 
 
@@ -246,7 +255,7 @@ def verify_insertion(out_conn, table, source, expected_min=1):
 def compute_msg_hash(username, create_time, content):
     """Computes a unique hash for a message to prevent global duplicates."""
     base_str = f"{username}|{create_time}|{content}"
-    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+    return hashlib.md5(base_str.encode("utf-8", errors="replace")).hexdigest()
 
 
 def parse_ios_backup(backup_dir, out_conn):
@@ -295,7 +304,9 @@ def parse_ios_backup(backup_dir, out_conn):
             cursor = conn.cursor()
             try:
                 # We check for the table and its columns
-                cursor.execute("SELECT userName, type, dbContactLocal, dbContactRemark FROM Friend")
+                cursor.execute(
+                    "SELECT userName, type, dbContactLocal, dbContactRemark FROM Friend"
+                )
                 rows = cursor.fetchall()
                 for row in rows:
                     uname = row[0]
@@ -311,7 +322,8 @@ def parse_ios_backup(backup_dir, out_conn):
                     if unick or uremark:
                         out_cursor.execute(
                             "UPDATE group4_raw_contacts SET nickname = ?, remark = ? "
-                            "WHERE username = ?", (unick, uremark, uname),
+                            "WHERE username = ?",
+                            (unick, uremark, uname),
                         )
                 logging.info(f"Processed {len(rows)} contacts.")
             except Exception as e:
@@ -333,7 +345,8 @@ def parse_ios_backup(backup_dir, out_conn):
                 for row in cursor.fetchall():
                     out_cursor.execute(
                         "UPDATE group4_raw_contacts SET nickname = ? "
-                        "WHERE username = ? AND nickname IS NULL", (row[1], row[0]),
+                        "WHERE username = ? AND nickname IS NULL",
+                        (row[1], row[0]),
                     )
                     if out_cursor.rowcount == 0:
                         out_cursor.execute(
@@ -353,7 +366,8 @@ def parse_ios_backup(backup_dir, out_conn):
                     out_cursor.execute(
                         "INSERT OR IGNORE INTO group4_raw_moments "
                         "(id, username, nickname, create_time, content, msg_hash) "
-                        "VALUES (?, ?, ?, ?, ?, ?)", (*row, m_hash),
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (*row, m_hash),
                     )
                 logging.info(f"Processed {len(rows)} moments.")
             except Exception as e:
@@ -395,8 +409,7 @@ def parse_ios_backup(backup_dir, out_conn):
                 logging.error(f"Error parsing FTS messages: {e}")
             conn.close()
             verify_insertion(
-                out_conn, "group4_raw_messages", source_name,
-                expected_min=total_msgs
+                out_conn, "group4_raw_messages", source_name, expected_min=total_msgs
             )
 
         # 4. Media Mapping
@@ -413,7 +426,8 @@ def parse_ios_backup(backup_dir, out_conn):
             cursor.execute(
                 "SELECT fileID, relativePath FROM Files "
                 "WHERE domain LIKE '%com.tencent.xin%' "
-                "AND relativePath LIKE ?", (pattern,),
+                "AND relativePath LIKE ?",
+                (pattern,),
             )
             for fid, rel in cursor.fetchall():
                 src_path = os.path.join(backup_dir, fid[:2], fid)
@@ -432,44 +446,71 @@ def parse_ios_backup(backup_dir, out_conn):
                 # Get extension from the original backup path
                 file_ext = os.path.splitext(parts[-1])[1]
                 if not file_ext:
-                    if mtype == "image": file_ext = ".jpg"
-                    elif mtype == "video": file_ext = ".mp4"
-                    elif mtype == "audio": file_ext = ".aud"
-                
+                    if mtype == "image":
+                        file_ext = ".jpg"
+                    elif mtype == "video":
+                        file_ext = ".mp4"
+                    elif mtype == "audio":
+                        file_ext = ".aud"
+
                 dest_filename = fid + file_ext
                 dest_rel_path = os.path.join(contact_folder_hash, dest_filename)
                 dest_path = os.path.join(MEDIA_ROOT, dest_rel_path)
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                
+
                 try:
                     if not os.path.exists(dest_path):
                         shutil.copy2(src_path, dest_path)
-                    
+
                     # Convert silk/aud to mp3 if needed
                     final_dest_path = dest_path
                     final_rel_path = dest_rel_path
-                    if mtype == "audio" and dest_path.lower().endswith((".aud", ".silk")):
+                    if mtype == "audio" and dest_path.lower().endswith(
+                        (".aud", ".silk")
+                    ):
                         converted_path = convert_silk_to_mp3(dest_path)
                         if converted_path != dest_path:
                             final_dest_path = converted_path
-                            final_rel_path = os.path.relpath(final_dest_path, MEDIA_ROOT)
+                            final_rel_path = os.path.relpath(
+                                final_dest_path, MEDIA_ROOT
+                            )
                     elif dest_path.lower().endswith(".video_thum"):
                         converted_path = convert_video_thum_to_jpg(dest_path)
                         if converted_path != dest_path:
                             final_dest_path = converted_path
-                            final_rel_path = os.path.relpath(final_dest_path, MEDIA_ROOT)
-                    elif dest_path.lower().endswith((".pic", ".pic_hd", ".pic_thum", ".pic_mid", ".pic_cmid", ".dftemp")):
+                            final_rel_path = os.path.relpath(
+                                final_dest_path, MEDIA_ROOT
+                            )
+                    elif dest_path.lower().endswith(
+                        (
+                            ".pic",
+                            ".pic_hd",
+                            ".pic_thum",
+                            ".pic_mid",
+                            ".pic_cmid",
+                            ".dftemp",
+                        )
+                    ):
                         converted_path = convert_image(dest_path)
                         if converted_path != dest_path:
                             final_dest_path = converted_path
-                            final_rel_path = os.path.relpath(final_dest_path, MEDIA_ROOT)
+                            final_rel_path = os.path.relpath(
+                                final_dest_path, MEDIA_ROOT
+                            )
 
                     out_cursor.execute(
                         "INSERT OR IGNORE INTO group4_raw_media "
                         "(id, username, type, relative_path, original_path, "
                         "file_size, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (fid, user_hash, mtype, final_rel_path, rel,
-                         os.path.getsize(final_dest_path), source_name),
+                        (
+                            fid,
+                            user_hash,
+                            mtype,
+                            final_rel_path,
+                            rel,
+                            os.path.getsize(final_dest_path),
+                            source_name,
+                        ),
                     )
                     total_media += 1
                 except Exception as e:
@@ -489,7 +530,7 @@ def cleanup_old_structures():
         item_path = os.path.join(MEDIA_ROOT, item)
         if os.path.isdir(item_path):
             # If not a 32-char hex string, remove it
-            if not re.match(r'^[0-9a-f]{32}$', item):
+            if not re.match(r"^[0-9a-f]{32}$", item):
                 logging.info(f"Removing old folder: {item}")
                 shutil.rmtree(item_path)
 
@@ -497,7 +538,7 @@ def cleanup_old_structures():
 def main():
     load_global_mappings()
     backup_dir = sys.argv[1] if len(sys.argv) > 1 else IOS_BACKUP_DIR
-    
+
     if not os.path.exists(backup_dir):
         logging.info(f"Directory not found: {backup_dir}")
         return
@@ -506,9 +547,9 @@ def main():
     parse_ios_backup(backup_dir, conn)
     conn.commit()
     conn.close()
-    
+
     cleanup_old_structures()
-    
+
     logging.info("iOS Backup parsing and cleanup finished.")
 
 

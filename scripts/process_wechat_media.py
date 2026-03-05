@@ -32,6 +32,7 @@ CIPHER = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
 
 try:
     import pilk
+
     HAS_PILK = True
 except ImportError:
     HAS_PILK = False
@@ -45,7 +46,7 @@ def convert_silk_to_mp3(src_path):
     # Check for silk v3 header (might have 0x02 prefix)
     with open(src_path, "rb") as f:
         header = f.read(10)
-    
+
     is_silk = False
     actual_silk_path = src_path
     temp_silk = None
@@ -54,7 +55,7 @@ def convert_silk_to_mp3(src_path):
         is_silk = True
     elif header.startswith(b"\x02#!SILK_V3"):
         is_silk = True
-        # Need to strip the first byte for some decoders, 
+        # Need to strip the first byte for some decoders,
         # but pilk might handle it or we might need a temp file.
         temp_silk = src_path + ".tmp.silk"
         with open(src_path, "rb") as f:
@@ -68,20 +69,29 @@ def convert_silk_to_mp3(src_path):
 
     dest_path = os.path.splitext(src_path)[0] + ".mp3"
     pcm_path = src_path + ".pcm"
-    
+
     try:
         # 1. Decode Silk to PCM
         pilk.decode(actual_silk_path, pcm_path)
-        
+
         # 2. Encode PCM to MP3
         cmd = [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "s16le", "-ar", "24000", "-ac", "1",
-            "-i", pcm_path,
-            dest_path
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "s16le",
+            "-ar",
+            "24000",
+            "-ac",
+            "1",
+            "-i",
+            pcm_path,
+            dest_path,
         ]
         subprocess.run(cmd, check=True)
-        
+
         # Cleanup originals
         os.remove(src_path)
         return dest_path
@@ -222,7 +232,7 @@ def get_image_info(image_abs_path):
         with Image.open(image_abs_path) as img:
             width, height = img.size
             filesize = os.path.getsize(image_abs_path)
-            return f"{filesize/1024:.1f}KB, {width}x{height}", image_abs_path
+            return f"{filesize / 1024:.1f}KB, {width}x{height}", image_abs_path
     except Exception:
         return "unknown size", None
 
@@ -252,7 +262,7 @@ def get_image_description(image_abs_path):
 def get_video_info(video_abs_path):
     try:
         filesize = os.path.getsize(video_abs_path)
-        return f"{filesize/(1024*1024):.1f}MB"
+        return f"{filesize / (1024 * 1024):.1f}MB"
     except Exception:
         return "unknown size"
 
@@ -276,7 +286,6 @@ def process_media():
             continue
 
         # Convert audio if needed
-        original_abs_path = abs_path
         if mtype == "audio" and abs_path.lower().endswith((".aud", ".silk")):
             new_abs_path = convert_silk_to_mp3(abs_path)
             if new_abs_path != abs_path:
@@ -286,7 +295,7 @@ def process_media():
                 new_size = os.path.getsize(abs_path)
                 cursor.execute(
                     "UPDATE wechat_raw_media SET relative_path = ?, original_path = original_path || ' (converted to mp3)', file_size = ? WHERE id = ?",
-                    (new_rel_path, new_size, mid)
+                    (new_rel_path, new_size, mid),
                 )
                 rel_path = new_rel_path
 

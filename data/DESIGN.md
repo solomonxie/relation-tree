@@ -78,23 +78,6 @@ SELECT COUNT(*) FROM group4_raw_messages;
 ```
 
 
-## Group 8:
-**Source:** `blobs/Wechat_txt/*`
-**Script:** `scripts/parse_group8_wechat_txt.py`
-
-**Description:**
-Manual text exports from WeChat.
-
-**Result:**
-- Inserted xx message records into `group8_wechat_txt.sqlite` (Table: `group8_raw_wechat_txt`)
-
-**Verification Strategy:**
-```sql
--- Sample check
-SELECT COUNT(*) FROM group8_raw_wechat_txt;
-```
-
-
 ## Group 5:
 **Source:** `blobs/Wechat/*.sqlite`
 **Script:** `scripts/parse_group5_wechat_forensic.py`

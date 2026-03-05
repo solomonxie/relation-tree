@@ -3,7 +3,7 @@ WeChat Internal Schema (Legacy) SQLite Parser
 ---------------------------------------------
 Target: blobs/old_wechat.sqlite
 Analysis: Databases that match our internal raw schema (e.g. from previous
-extraction or migrations). These contain 'wechat_raw_messages', 
+extraction or migrations). These contain 'wechat_raw_messages',
 'wechat_raw_contacts', 'wechat_moments', and 'wechat_raw_media' tables.
 Destination: wechat_raw_contacts, wechat_raw_messages, wechat_moments, wechat_raw_media
 """
@@ -13,6 +13,7 @@ import logging
 import os
 import sqlite3
 from setup_db import setup_db
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -39,7 +40,7 @@ def verify_insertion(out_conn, table, source, expected_min=1):
 def compute_msg_hash(username, create_time, content):
     """Computes a unique hash for a message to prevent global duplicates."""
     base_str = f"{username}|{create_time}|{content}"
-    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+    return hashlib.md5(base_str.encode("utf-8", errors="replace")).hexdigest()
 
 
 def parse_internal_sqlite(sqlite_path, out_conn):
@@ -64,56 +65,48 @@ def parse_internal_sqlite(sqlite_path, out_conn):
         "AND (name='messages' OR name='wechat_raw_messages')"
     )
     if not cursor.fetchone():
-        logging.warning(
-            f"Source {sqlite_path} does not match internal schema."
-        )
+        logging.warning(f"Source {sqlite_path} does not match internal schema.")
         conn.close()
         return
 
-    logging.info(f"Source matches our schema, copying directly.")
+    logging.info("Source matches our schema, copying directly.")
 
     # 1. Copy Contacts
     try:
-        cursor.execute(
-            "SELECT username, nickname, type FROM wechat_raw_contacts"
-        )
+        cursor.execute("SELECT username, nickname, type FROM wechat_raw_contacts")
     except Exception:
         cursor.execute("SELECT username, nickname, type FROM contacts")
 
     for row in cursor.fetchall():
         out_cursor.execute(
             "INSERT OR IGNORE INTO wechat_raw_contacts "
-            "(username, nickname, type) VALUES (?, ?, ?)", row,
+            "(username, nickname, type) VALUES (?, ?, ?)",
+            row,
         )
 
     # 2. Copy Messages
     try:
         cursor.execute(
-            "SELECT username, create_time, content, local_id "
-            "FROM wechat_raw_messages"
+            "SELECT username, create_time, content, local_id FROM wechat_raw_messages"
         )
     except Exception:
-        cursor.execute(
-            "SELECT username, create_time, content, local_id FROM messages"
-        )
+        cursor.execute("SELECT username, create_time, content, local_id FROM messages")
     count = 0
     for row in cursor.fetchall():
         m_hash = compute_msg_hash(row[0], row[1], row[2])
         out_cursor.execute(
             "INSERT OR IGNORE INTO wechat_raw_messages "
             "(username, create_time, content, local_id, source, msg_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?)", (*row, source_name, m_hash),
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (*row, source_name, m_hash),
         )
         count += 1
-    verify_insertion(
-        out_conn, "wechat_raw_messages", source_name, expected_min=count
-    )
+    verify_insertion(out_conn, "wechat_raw_messages", source_name, expected_min=count)
 
     # 3. Copy Moments
     try:
         cursor.execute(
-            "SELECT id, username, nickname, create_time, content "
-            "FROM wechat_moments"
+            "SELECT id, username, nickname, create_time, content FROM wechat_moments"
         )
     except Exception:
         cursor.execute(
@@ -124,7 +117,8 @@ def parse_internal_sqlite(sqlite_path, out_conn):
         out_cursor.execute(
             "INSERT OR IGNORE INTO wechat_moments "
             "(id, username, nickname, create_time, content, msg_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?)", (*row, m_hash),
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (*row, m_hash),
         )
 
     # 4. Copy Media

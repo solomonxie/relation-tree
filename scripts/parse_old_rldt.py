@@ -76,7 +76,9 @@ def process_zips():
         )
         # If ignore occurred, we need to fetch the existing ID
         if cursor.rowcount == 0:
-            cursor.execute("SELECT id FROM persons WHERE folder_hash = ?", (folder_hash,))
+            cursor.execute(
+                "SELECT id FROM persons WHERE folder_hash = ?", (folder_hash,)
+            )
             person_id = cursor.fetchone()[0]
         else:
             person_id = cursor.lastrowid
@@ -100,11 +102,11 @@ def process_zips():
                 with z.open(file_info) as f:
                     file_data = f.read()
                     file_hash_16 = get_file_hash(file_data)
-                    
+
                     # Check if media already exists
                     cursor.execute(
                         "SELECT id FROM media WHERE file_hash = ? AND person_id = ?",
-                        (file_hash_16, person_id)
+                        (file_hash_16, person_id),
                     )
                     if cursor.fetchone():
                         continue
@@ -115,7 +117,7 @@ def process_zips():
                     ext = os.path.splitext(filename)[1].lower()
                     if ext == ".json":
                         continue
-                    
+
                     if ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]:
                         mtype = "image"
                     elif ext in [".mp4", ".mov", ".avi", ".mkv"]:

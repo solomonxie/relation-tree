@@ -32,7 +32,7 @@ def init_db():
     if os.path.exists(OUTPUT_DB):
         os.remove(OUTPUT_DB)
     os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
-    with open(SCHEMA_FILE, 'r') as f:
+    with open(SCHEMA_FILE, "r") as f:
         schema_sql = f.read()
     conn = sqlite3.connect(OUTPUT_DB)
     conn.executescript(schema_sql)
@@ -43,7 +43,7 @@ def init_db():
 def compute_msg_hash(username, create_time, content):
     """Computes a unique hash for a message."""
     base_str = f"{username}|{create_time}|{content}"
-    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+    return hashlib.md5(base_str.encode("utf-8", errors="replace")).hexdigest()
 
 
 def parse_exported_text(export_dir, out_conn):
@@ -70,7 +70,8 @@ def parse_exported_text(export_dir, out_conn):
                     with open(file_path, "r", encoding=enc) as f:
                         content = f.read()
                     break
-                except: continue
+                except Exception:
+                    continue
 
             if not content:
                 logging.error(f"Could not read {filename}")
@@ -86,9 +87,12 @@ def parse_exported_text(export_dir, out_conn):
                 if match:
                     dt_str, contact, direction, mtype, msg_content = match.groups()
                     try:
-                        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(tzinfo=beijing_tz)
+                        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M").replace(
+                            tzinfo=beijing_tz
+                        )
                         ts = int(dt.timestamp())
-                    except: continue
+                    except Exception:
+                        continue
 
                     msg_content = msg_content.strip()
                     m_hash = compute_msg_hash(username, ts, msg_content)

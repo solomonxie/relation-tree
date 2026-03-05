@@ -24,18 +24,22 @@ logging.basicConfig(
 # Constants
 OUTPUT_DB = "data/db/raw/group1_qq_txt.sqlite"
 SCHEMA_FILE = "data/schema/raw/group1_qq_txt.sql"
-OWNER_NAME = '几何体'
+OWNER_NAME = "几何体"
 
 
 def compute_msg_hash(sender, create_time, content):
     """Computes a unique hash for a message to prevent global duplicates."""
     base_str = f"{sender}|{create_time}|{content}"
-    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+    return hashlib.md5(base_str.encode("utf-8", errors="replace")).hexdigest()
 
 
 def clean_msg(msg):
     # Remove styling tags
-    msg = re.sub(r"[^>\n]*'(?:MS Sans Serif|Tahoma|宋体|微软雅黑|Arial|Times New Roman)'[^>\n]*>", "", msg)
+    msg = re.sub(
+        r"[^>\n]*'(?:MS Sans Serif|Tahoma|宋体|微软雅黑|Arial|Times New Roman)'[^>\n]*>",
+        "",
+        msg,
+    )
     # Generic cleanup for remaining font/color markers
     msg = re.sub(r"<font[^>]*>|</font>", "", msg)
     return msg.strip()
@@ -44,7 +48,7 @@ def clean_msg(msg):
 def init_db():
     """Initialize DB using the local schema file."""
     os.makedirs(os.path.dirname(OUTPUT_DB), exist_ok=True)
-    with open(SCHEMA_FILE, 'r') as f:
+    with open(SCHEMA_FILE, "r") as f:
         schema_sql = f.read()
 
     conn = sqlite3.connect(OUTPUT_DB)
@@ -59,32 +63,34 @@ def parse_file(filepath, cursor):
     logging.info(f"Processing {filepath}")
     filename = os.path.basename(filepath)
     # Filename format: Name_QQID.txt
-    parts = filename.replace('.txt', '').split('_')
+    parts = filename.replace(".txt", "").split("_")
     contact_name = parts[0]
     qqid = parts[1] if len(parts) > 1 else contact_name
 
-    date_ = '1900-01-01'
-    time_ = '00:00:00'
+    date_ = "1900-01-01"
+    time_ = "00:00:00"
     raw_sender = contact_name
     last_content_end_idx = -1
 
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+    with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
         lines = f.read().splitlines()
 
     i, msg_start = 0, 0
     total_msgs = 0
     while i <= len(lines):
         line = lines[i].strip() if i < len(lines) else "日期: END"
-        time_match = re.match(r'^(\d{1,2}:\d{2}:\d{2})$', line) if i < len(lines) else None
+        time_match = (
+            re.match(r"^(\d{1,2}:\d{2}:\d{2})$", line) if i < len(lines) else None
+        )
 
-        if line.startswith('日期:') or time_match:
+        if line.startswith("日期:") or time_match:
             if msg_start > 0:
                 end_idx = i - 2 if time_match else i - 1
-                msg = clean_msg('\n'.join(lines[msg_start:end_idx+1]))
+                msg = clean_msg("\n".join(lines[msg_start : end_idx + 1]))
                 last_content_end_idx = end_idx
                 if not msg:
                     continue
-                if date_ == '1900-01-01' or time_ == '00:00:00':
+                if date_ == "1900-01-01" or time_ == "00:00:00":
                     continue
                 username = OWNER_NAME if raw_sender == OWNER_NAME else contact_name
                 nickname = raw_sender
@@ -95,16 +101,16 @@ def parse_file(filepath, cursor):
                     "INSERT OR IGNORE INTO group1_qq_txt_raw_chats "
                     "(source_file, username, nickname, create_time, content, platform, subfolder, msg_hash) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (filepath, username, nickname, ts, msg, "qq_txt", qqid, m_hash)
+                    (filepath, username, nickname, ts, msg, "qq_txt", qqid, m_hash),
                 )
                 total_msgs += 1
             if i >= len(lines):
                 break
 
-            if line.startswith('日期:'):
-                date_match = re.search(r'(\d{4}-\d{2}-\d{2})', line)
+            if line.startswith("日期:"):
+                date_match = re.search(r"(\d{4}-\d{2}-\d{2})", line)
                 if not date_match and i + 1 < len(lines):
-                    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', lines[i+1])
+                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", lines[i + 1])
                     if date_match:
                         i += 1
                 if date_match:
@@ -118,7 +124,11 @@ def parse_file(filepath, cursor):
                 potential_sender_idx = i - 1
                 if potential_sender_idx > last_content_end_idx:
                     potential_sender = lines[potential_sender_idx].strip()
-                    if potential_sender and not re.match(r'^(\d{1,2}:\d{2}:\d{2})$', potential_sender) and "窗口抖动" not in potential_sender:
+                    if (
+                        potential_sender
+                        and not re.match(r"^(\d{1,2}:\d{2}:\d{2})$", potential_sender)
+                        and "窗口抖动" not in potential_sender
+                    ):
                         raw_sender = potential_sender
 
                 time_ = new_time
@@ -157,5 +167,5 @@ def main():
     logging.info(f"Processing complete. Total messages: {total_extracted}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
