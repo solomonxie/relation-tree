@@ -1,6 +1,4 @@
-
 import os
-import re
 
 TXT_DIR = "blobs/qq_txt"
 
@@ -35,21 +33,23 @@ RENAME_MAP = {
     "李辰": ("277127549", "李辰"),
     "王然": ("305550996", "王然"),
     "刘露": ("812605717", "刘露"),
-    "齐雅欣": ("齐雅欣", "齐雅欣"), # ID unknown yet
-    "郑可君": ("郑可君", "郑可君"), 
+    "齐雅欣": ("齐雅欣", "齐雅欣"),  # ID unknown yet
+    "郑可君": ("郑可君", "郑可君"),
     "郑天兵": ("郑天兵", "郑天兵"),
     "talice": ("苗苗", "苗苗"),
     "TeachernbspLeona": ("3243141566", "Teacher Leona"),
 }
 
+
 def main():
     files = os.listdir(TXT_DIR)
     for filename in files:
-        if "unknown" not in filename: continue
-        
+        if "unknown" not in filename:
+            continue
+
         path = os.path.join(TXT_DIR, filename)
         new_filename = filename
-        
+
         # Try to find a match in RENAME_MAP
         for frag, (new_id, new_name) in RENAME_MAP.items():
             if frag in filename:
@@ -59,11 +59,12 @@ def main():
                 elif f"sender_id_unknown__sender_name_{frag}" in filename:
                     new_filename = filename.replace("sender_id_unknown", new_id)
                 break
-        
+
         if new_filename != filename:
             new_path = os.path.join(TXT_DIR, new_filename)
             os.rename(path, new_path)
             print(f"Renamed: {filename} -> {new_filename}")
+
 
 if __name__ == "__main__":
     main()

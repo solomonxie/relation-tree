@@ -29,7 +29,7 @@ OTHERS_DIR = "blobs/others"
 def compute_msg_hash(username, create_time, content):
     """Computes a unique hash for a message to prevent global duplicates."""
     base_str = f"{username}|{create_time}|{content}"
-    return hashlib.md5(base_str.encode('utf-8', errors='replace')).hexdigest()
+    return hashlib.md5(base_str.encode("utf-8", errors="replace")).hexdigest()
 
 
 def parse_qq_text_chat(file_path, cursor, subfolder):
@@ -44,9 +44,7 @@ def parse_qq_text_chat(file_path, cursor, subfolder):
         current_content = []
         total_msgs = 0
         # Format: 2026-02-27 16:30:00 Username
-        header_re = re.compile(
-            r"^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.*)$"
-        )
+        header_re = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.*)$")
 
         for line in lines:
             line = line.strip()
@@ -62,16 +60,22 @@ def parse_qq_text_chat(file_path, cursor, subfolder):
                         "INSERT OR IGNORE INTO other_raw_chats "
                         "(source_file, username, create_time, content, "
                         "platform, subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (file_path, current_user, current_ts,
-                         msg_content, "qq_text", subfolder, m_hash),
+                        (
+                            file_path,
+                            current_user,
+                            current_ts,
+                            msg_content,
+                            "qq_text",
+                            subfolder,
+                            m_hash,
+                        ),
                     )
                     total_msgs += 1
 
                 # Start new message
                 current_ts = int(
                     datetime.strptime(
-                        f"{match.group(1)} {match.group(2)}",
-                        "%Y-%m-%d %H:%M:%S"
+                        f"{match.group(1)} {match.group(2)}", "%Y-%m-%d %H:%M:%S"
                     ).timestamp()
                 )
                 current_user = match.group(3).strip()
@@ -88,8 +92,15 @@ def parse_qq_text_chat(file_path, cursor, subfolder):
                 "INSERT OR IGNORE INTO other_raw_chats "
                 "(source_file, username, create_time, content, platform, "
                 "subfolder, msg_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (file_path, current_user, current_ts,
-                 msg_content, "qq_text", subfolder, m_hash),
+                (
+                    file_path,
+                    current_user,
+                    current_ts,
+                    msg_content,
+                    "qq_text",
+                    subfolder,
+                    m_hash,
+                ),
             )
             total_msgs += 1
         logging.info(f"Extracted {total_msgs} messages.")
