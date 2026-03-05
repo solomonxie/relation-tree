@@ -2,8 +2,6 @@
 blobs/*
 !blobs/README.md
 
-<<<<<<< HEAD
-=======
 data/db/*
 !data/db/README.md
 data/media/*
@@ -16,5 +14,4 @@ __pycache__
 
 .env
 
->>>>>>> 263b0b9ed3e77908e9ef06ce450c0036685ebc25
 .DS_Store
