@@ -4,12 +4,13 @@ Group 5: WeChat Standard SQLite and Media Parser
 Target: blobs/Wechat/ (MM*.sqlite + images/ + voice/)
 Analysis: Standard WeChat (WCDB) SQLite databases and media folders.
 Features:
-1. Aggregates contact info from all available sources (old_wechat, group4, group8).
-2. Maps hashed chat table names and media filenames back to real contact IDs using prefix matching.
+1. Extract contact info only from the target blobs folder (blobs/Wechat).
+2. Maps hashed chat table names and media filenames back to real contact IDs using internal maps.
 3. Parses messages from 'Chat_[hash]' tables in MM*.sqlite.
 4. Converts XML-formatted messages to descriptive plain text (Title + Description).
 5. Links media files to contacts using filename hash fragments.
 6. Converts AMR to MP3 and identifies image formats.
+7. Independent: No references to other groups or external SQLite databases.
 """
 
 import hashlib
@@ -30,9 +31,6 @@ logging.basicConfig(
 OUTPUT_DB = "data/db/raw/group5_wechat_forensic.sqlite"
 SCHEMA_FILE = "data/schema/raw/group5_wechat_forensic.sql"
 WECHAT_DIR = "blobs/Wechat"
-OLD_WECHAT_DB = "blobs/old_wechat.sqlite"
-GROUP4_DB = "data/db/raw/group4_wechat_ios.sqlite"
-GROUP8_DB = "data/db/raw/group8_wechat_txt.sqlite"
 MEDIA_ROOT = "data/media/wechat_media"
 
 
@@ -49,9 +47,9 @@ def init_db():
     return conn
 
 
-def get_contact_mapping(out_conn):
+def get_internal_contact_mapping(wechat_dir, out_conn):
     """
-    Aggregates contact info from master databases.
+    Extracts contact mapping from internal SQLite files in the target folder.
     Returns:
         id_to_nick: {id: nickname}
         hash_to_id: {md5(id): id}
@@ -63,39 +61,38 @@ def get_contact_mapping(out_conn):
 
     out_cursor = out_conn.cursor()
 
-    # Sources to check
-    sources = [
-        (OLD_WECHAT_DB, "SELECT username, nickname FROM contacts"),
-        (GROUP4_DB, "SELECT username, nickname FROM group4_raw_contacts"),
-        (GROUP8_DB, "SELECT username, nickname FROM group8_raw_contacts"),
-    ]
-
-    for db_path, query in sources:
-        if not os.path.exists(db_path):
+    for filename in os.listdir(wechat_dir):
+        if not (filename.endswith(".sqlite") or filename.endswith(".db")):
             continue
+        
+        sqlite_path = os.path.join(wechat_dir, filename)
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(sqlite_path)
             cursor = conn.cursor()
-            cursor.execute(query)
-            for row in cursor.fetchall():
-                uname, unick = row
-                if not uname or len(uname) < 2:
-                    continue
+            
+            # Check if 'Friend' table exists
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Friend'")
+            if cursor.fetchone():
+                cursor.execute("SELECT UsrName, NickName FROM Friend")
+                for row in cursor.fetchall():
+                    uname, unick = row
+                    if not uname or len(uname) < 2:
+                        continue
+                    
+                    id_to_nick[uname] = unick
+                    uhash = hashlib.md5(uname.encode("utf-8")).hexdigest()
+                    hash_to_id[uhash] = uname
+                    prefix_to_id[uhash[:8]] = uname
 
-                # Normalize
-                id_to_nick[uname] = unick
-                uhash = hashlib.md5(uname.encode("utf-8")).hexdigest()
-                hash_to_id[uhash] = uname
-                prefix_to_id[uhash[:8]] = uname
-
-                # Pre-populate output DB contacts
-                out_cursor.execute(
-                    "INSERT OR IGNORE INTO group5_raw_contacts (username, nickname) VALUES (?, ?)",
-                    (uname, unick),
-                )
+                    # Pre-populate output DB contacts
+                    out_cursor.execute(
+                        "INSERT OR IGNORE INTO group5_raw_contacts (username, nickname) VALUES (?, ?)",
+                        (uname, unick),
+                    )
+            
             conn.close()
         except Exception as e:
-            logging.error(f"Error loading contacts from {db_path}: {e}")
+            logging.debug(f"Info: Could not load contacts from {sqlite_path}: {e}")
 
     return id_to_nick, hash_to_id, prefix_to_id
 
@@ -105,7 +102,6 @@ def clean_xml_content(content):
     if not content or not content.strip().startswith("<"):
         return content
 
-    # Skip if it doesn't look like WeChat XML
     if "appmsg" not in content and "msg" not in content and "voicemsg" not in content:
         return content
 
@@ -114,20 +110,17 @@ def clean_xml_content(content):
         if not xml_data.startswith("<?xml"):
             xml_data = f"<?xml version='1.0' encoding='UTF-8'?><root>{xml_data}</root>"
         else:
-            # Handle multiple roots
             if xml_data.count("<msg") > 1 or xml_data.count("<appmsg") > 1:
                 xml_data = xml_data.replace('<?xml version="1.0"?>', "")
                 xml_data = f"<root>{xml_data}</root>"
 
         root = ET.fromstring(xml_data)
 
-        # 1. Voice messages
         voice = root.find(".//voicemsg")
         if voice is not None:
             vlen = voice.get("voicelength", "0")
             return f"[Voice Message: {int(vlen) / 1000:.1f}s]"
 
-        # 2. App messages (links, files, etc)
         title = root.find(".//title")
         des = root.find(".//des")
 
@@ -136,13 +129,12 @@ def clean_xml_content(content):
             parts.append(title.text.strip())
         if des is not None and des.text:
             dtext = des.text.strip()
-            if not parts or dtext not in parts[0]:  # Avoid redundancy
+            if not parts or dtext not in parts[0]:
                 parts.append(dtext)
 
         if parts:
             return " | ".join(parts)
 
-        # 3. Fallback to all text
         text_parts = [t.strip() for t in root.itertext() if t and t.strip()]
         if text_parts:
             res = " ".join(text_parts)
@@ -150,7 +142,6 @@ def clean_xml_content(content):
 
         return content
     except Exception:
-        # Regex fallback for title/des
         title_m = re.search(r"<title>(.*?)</title>", content, re.DOTALL)
         des_m = re.search(r"<des>(.*?)</des>", content, re.DOTALL)
 
@@ -171,8 +162,45 @@ def clean_xml_content(content):
         return " | ".join(parts) if parts else content
 
 
-def convert_amr_to_mp3(src_path, dest_path):
-    """Converts AMR to MP3."""
+try:
+    import pilk
+    HAS_PILK = True
+except ImportError:
+    HAS_PILK = False
+
+# Setup logging
+...
+def convert_audio_to_mp3(src_path, dest_path):
+    """Converts Silk or AMR to MP3."""
+    if not os.path.exists(src_path): return False
+    
+    with open(src_path, "rb") as f:
+        header = f.read(10)
+    
+    # 1. Handle Silk
+    if HAS_PILK and (header.startswith(b"#!SILK_V3") or header.startswith(b"\x02#!SILK_V3")):
+        actual_silk_path = src_path
+        temp_silk = None
+        if header.startswith(b"\x02#!SILK_V3"):
+            temp_silk = src_path + ".tmp.silk"
+            with open(src_path, "rb") as f:
+                f.seek(1)
+                with open(temp_silk, "wb") as tf: tf.write(f.read())
+            actual_silk_path = temp_silk
+        
+        pcm_path = src_path + ".pcm"
+        try:
+            pilk.decode(actual_silk_path, pcm_path)
+            cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", pcm_path, dest_path]
+            subprocess.run(cmd, check=True)
+            return True
+        except Exception as e:
+            logging.error(f"Error converting silk {src_path}: {e}")
+        finally:
+            if os.path.exists(pcm_path): os.remove(pcm_path)
+            if temp_silk and os.path.exists(temp_silk): os.remove(temp_silk)
+    
+    # 2. Handle AMR or others using ffmpeg directly
     try:
         cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", src_path, dest_path]
         subprocess.run(cmd, check=True)
@@ -183,25 +211,27 @@ def convert_amr_to_mp3(src_path, dest_path):
 
 def identify_format_and_fix_ext(file_path):
     """Identifies format and fixes extension."""
-    if not os.path.exists(file_path):
+    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
         return file_path
     try:
         with open(file_path, "rb") as f:
             header = f.read(16)
         ext = ""
-        if header.startswith(b"\xff\xd8\xff"):
-            ext = ".jpg"
-        elif header.startswith(b"\x89PNG"):
-            ext = ".png"
-        elif header.startswith(b"GIF8"):
-            ext = ".gif"
-        elif b"ftyp" in header[4:12]:
-            ext = ".mp4"
-        elif header.startswith(b"#!AMR"):
-            ext = ".amr"
+        if header.startswith(b"\xff\xd8\xff"): ext = ".jpg"
+        elif header.startswith(b"\x89PNG"): ext = ".png"
+        elif header.startswith(b"GIF8"): ext = ".gif"
+        elif b"ftyp" in header[4:12]: ext = ".mp4"
+        elif header.startswith(b"#!AMR"): ext = ".amr"
+        elif header.startswith(b"#!SILK_V3") or header.startswith(b"\x02#!SILK_V3"): ext = ".silk"
 
         if ext and not file_path.lower().endswith(ext):
             new_path = file_path + ext
+            if os.path.exists(new_path):
+                if os.path.getsize(new_path) == os.path.getsize(file_path):
+                    os.remove(file_path)
+                    return new_path
+                else:
+                    new_path = file_path + "_fixed" + ext
             os.rename(file_path, new_path)
             return new_path
     except Exception:
@@ -233,11 +263,9 @@ def parse_wcdb_sqlite(sqlite_path, out_conn, id_to_nick, hash_to_id):
         total_msgs = 0
         for table in chat_tables:
             uhash = table.replace("Chat_", "")
-            # Map back to real ID
             username = hash_to_id.get(uhash, uhash)
             nickname = id_to_nick.get(username, f"Unknown_{username[:8]}")
 
-            # Ensure contact is logged
             out_cursor.execute(
                 "INSERT OR IGNORE INTO group5_raw_contacts (username, nickname) VALUES (?, ?)",
                 (username, nickname),
@@ -277,8 +305,6 @@ def parse_media(wechat_dir, out_conn, hash_to_id, prefix_to_id):
     media_count = 0
 
     media_dirs = [os.path.join(wechat_dir, "images"), os.path.join(wechat_dir, "voice")]
-
-    # Sort by length to prefer longer matches
     sorted_prefixes = sorted(prefix_to_id.keys(), key=len, reverse=True)
 
     for mdir in media_dirs:
@@ -290,15 +316,12 @@ def parse_media(wechat_dir, out_conn, hash_to_id, prefix_to_id):
                     continue
                 src_path = os.path.join(root, f)
 
-                # Identify contact by hash or prefix in filename
                 real_id = "legacy_unknown"
-                # 1. Full hash match
                 for h, uid in hash_to_id.items():
                     if h in f:
                         real_id = uid
                         break
 
-                # 2. Prefix match (for truncated filenames like in voice/)
                 if real_id == "legacy_unknown":
                     for p in sorted_prefixes:
                         if p in f:
@@ -316,12 +339,12 @@ def parse_media(wechat_dir, out_conn, hash_to_id, prefix_to_id):
                     final_path = identify_format_and_fix_ext(dest_path)
                     if final_path.lower().endswith(".amr"):
                         mp3_path = os.path.splitext(final_path)[0] + ".mp3"
-                        if convert_amr_to_mp3(final_path, mp3_path):
+                        if convert_audio_to_mp3(final_path, mp3_path):
                             os.remove(final_path)
                             final_path = mp3_path
 
                     mtype = "unknown"
-                    if final_path.lower().endswith((".jpg", ".png", ".gif")):
+                    if final_path.lower().endswith((".jpg", ".png", ".gif", ".jpeg")):
                         mtype = "image"
                     elif final_path.lower().endswith(".mp3"):
                         mtype = "audio"
@@ -355,12 +378,13 @@ def main():
         return
 
     conn = init_db()
-    id_to_nick, hash_to_id, prefix_to_id = get_contact_mapping(conn)
-    logging.info(f"Loaded {len(id_to_nick)} contacts from multiple sources.")
+    id_to_nick, hash_to_id, prefix_to_id = get_internal_contact_mapping(WECHAT_DIR, conn)
+    logging.info(f"Loaded {len(id_to_nick)} internal contacts.")
 
     for f in os.listdir(WECHAT_DIR):
         if f.endswith(".sqlite") or f.endswith(".db"):
-            parse_wcdb_sqlite(os.path.join(WECHAT_DIR, f), conn, id_to_nick, hash_to_id)
+            if "MM" in f:
+                parse_wcdb_sqlite(os.path.join(WECHAT_DIR, f), conn, id_to_nick, hash_to_id)
 
     parse_media(WECHAT_DIR, conn, hash_to_id, prefix_to_id)
 
