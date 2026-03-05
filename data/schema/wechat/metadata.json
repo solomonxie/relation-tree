@@ -1,0 +1,12 @@
+{
+  "database": "wechat.sqlite",
+  "version": "1.0.0",
+  "description": "WeChat messages, contacts, and moments from iOS backup",
+  "domain": "wechat",
+  "created_date": "2026-02-25",
+  "last_updated": "2026-02-25",
+  "schema_file": "wechat.sql",
+  "table_count": 4,
+  "primary_table": "messages",
+  "supports_fts": true
+}
